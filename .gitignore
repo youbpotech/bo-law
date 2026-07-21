@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+/.pnpm-store/
+
+# Build output and caches
+dist/
+dist-ssr/
+coverage/
+*.tsbuildinfo
+*.local
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Tests
+cypress/videos/
+cypress/screenshots/
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local agent configuration
+.agents/

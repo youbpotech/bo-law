@@ -1,0 +1,56 @@
+# Cursor Rules for Admin UI
+
+## Project Overview
+This is a Vue 3 + TypeScript admin dashboard built with:
+- Vue 3 with Composition API
+- TypeScript
+- Tailwind CSS
+- shadcn/ui components
+- TanStack Query
+- Vue i18n
+- Pinia for state management
+
+## Code Style Guidelines
+
+### Naming Conventions
+- Use camelCase for function names and include business logic in the name
+- Examples: `calcularTotalCarrinho`, `validarDadosCliente`
+- For test functions, use camelCase without underscores: `testarCalculoBonusApostador`
+- Avoid internal comments in functions
+- Prioritize clear and readable code with expressive function names
+
+### Vue 3 Best Practices
+- Use Composition API with `<script setup>`
+- Define props with TypeScript interfaces
+- Use `defineEmits` for component events
+- Prefer `computed` and `ref` for reactivity
+- Use `onMounted`, `onUnmounted` for lifecycle hooks
+
+### Component Structure
+- Place UI components in `src/components/ui/`
+- Place layout components in `src/components/layout/`
+- Use shadcn/ui components as base
+- Follow single responsibility principle
+
+### Styling
+- Use Tailwind CSS classes
+- Use CSS variables for theming
+- Follow shadcn/ui design system
+- Use `cn()` utility for conditional classes
+
+### State Management
+- Use Pinia stores for global state
+- Use composables for reusable logic
+- Keep component state local when possible
+
+### File Organization
+- Group related files in folders
+- Use index files for clean imports
+- Follow Vue 3 project structure conventions
+
+## Development Workflow
+- Use pnpm for package management
+- Follow TypeScript strict mode
+- Use ESLint and Prettier for code formatting
+- Write meaningful commit messages
+- Test components before committing

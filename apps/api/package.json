@@ -1,0 +1,34 @@
+{
+  "name": "@bo-law/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "migration:run": "tsx src/scripts/run-migrations.ts",
+    "bootstrap:root": "tsx src/scripts/bootstrap-root.ts",
+    "test": "vitest run",
+    "type-check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "image-size": "^2.0.2",
+    "openai": "^4.104.0",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.2",
+    "twilio": "^5.13.1",
+    "typeorm": "^0.3.28"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.16.5",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.0",
+    "vitest": "^3.2.4"
+  }
+}

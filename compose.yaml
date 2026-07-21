@@ -1,0 +1,115 @@
+name: bo-law
+
+services:
+  tools:
+    profiles: [tools]
+    build:
+      context: .
+      target: tooling
+    init: true
+    network_mode: none
+
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bo_law}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+      DB_NAME: ${POSTGRES_DB:-bo_law}
+      DB_SSL: 'false'
+      AUTH_SECRET: ${AUTH_SECRET:?Defina AUTH_SECRET no arquivo .env}
+      BOOTSTRAP_ROOT_NAME: ${BOOTSTRAP_ROOT_NAME:-}
+      BOOTSTRAP_ROOT_USERNAME: ${BOOTSTRAP_ROOT_USERNAME:-}
+      BOOTSTRAP_ROOT_PASSWORD: ${BOOTSTRAP_ROOT_PASSWORD:-}
+      BOOTSTRAP_ROOT_COMPANY_ID: ${BOOTSTRAP_ROOT_COMPANY_ID:-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_TRANSCRIPTION_MODEL: ${OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-10000}
+      AUDIO_TRANSCRIPTION_ENABLED: ${AUDIO_TRANSCRIPTION_ENABLED:-true}
+      AUDIO_TRANSCRIPTION_LANGUAGE: ${AUDIO_TRANSCRIPTION_LANGUAGE:-pt}
+      AUDIO_MAX_BYTES: ${AUDIO_MAX_BYTES:-20971520}
+      AUDIO_TRANSCRIPTION_TIMEOUT_MS: ${AUDIO_TRANSCRIPTION_TIMEOUT_MS:-60000}
+      AUDIO_MAX_ATTEMPTS: ${AUDIO_MAX_ATTEMPTS:-5}
+      AUDIO_WORKER_CONCURRENCY: ${AUDIO_WORKER_CONCURRENCY:-2}
+      AUDIO_WORKER_POLL_MS: ${AUDIO_WORKER_POLL_MS:-3000}
+      AUDIO_WORKER_LEASE_MS: ${AUDIO_WORKER_LEASE_MS:-900000}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
+      VALIDATE_TWILIO_SIGNATURE: ${VALIDATE_TWILIO_SIGNATURE:-true}
+      LEADS_DEFAULT_COMPANY_ID: ${LEADS_DEFAULT_COMPANY_ID:-}
+    command:
+      - /bin/sh
+      - -c
+      - node apps/api/dist/scripts/run-migrations.js && node apps/api/dist/scripts/bootstrap-root.js && exec node apps/api/dist/index.js
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+
+  pgadmin:
+    profiles: [tools]
+    image: dpage/pgadmin4:9.5
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - '127.0.0.1:${PGADMIN_PORT:-5050}:80'
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    ports:
+      - '${APP_PORT:-8080}:8080'
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  backend:
+    driver: bridge
