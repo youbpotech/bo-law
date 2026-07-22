@@ -3,21 +3,29 @@ import { buildDossierSummary, buildDossierSections } from './niss-dossier'
 
 describe('buildDossierSummary', () => {
   it('retorna um texto de resumo para pedidos negados', () => {
-    const summary = buildDossierSummary({ status: 'NEGADO', denialReason: 'Documento incompleto' })
+    const summary = buildDossierSummary({
+      status: 'NEGADO',
+      clientName: 'Maria Silva',
+      decisionDate: '2026-07-22',
+      denialReason: 'Documento incompleto',
+    })
 
-    expect(summary).toContain('negado')
-    expect(summary).toContain('não avançou')
+    expect(summary).toContain('Maria Silva')
+    expect(summary).toContain('reprovado')
+    expect(summary).toContain('Documento incompleto')
   })
 
   it('retorna um texto de resumo para pedidos em curso', () => {
-    const summary = buildDossierSummary({ status: 'EM_CURSO' })
+    const summary = buildDossierSummary({ status: 'EM_CURSO', clientName: 'Maria Silva' })
 
+    expect(summary).toContain('Maria Silva')
     expect(summary).toContain('segue em análise')
   })
 
   it('retorna um texto de resumo para pedidos aprovados', () => {
-    const summary = buildDossierSummary({ status: 'CONCLUIDO', niss: '12345678901' })
+    const summary = buildDossierSummary({ status: 'CONCLUIDO', clientName: 'Maria Silva', niss: '12345678901' })
 
+    expect(summary).toContain('Maria Silva')
     expect(summary).toContain('aprovado')
     expect(summary).toContain('resultado favorável')
   })

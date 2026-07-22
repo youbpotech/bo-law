@@ -47,18 +47,29 @@ function buildEntriesFromObject(source: Record<string, unknown>, labels: Record<
     }))
 }
 
-export function buildDossierSummary(input: { status: DossierStatus; denialReason?: string | null; niss?: string | null }): string {
+export function buildDossierSummary(input: {
+  status: DossierStatus
+  clientName?: string | null
+  decisionDate?: string | null
+  denialReason?: string | null
+  niss?: string | null
+}): string {
   const normalizedStatus = normalizeStatus(input.status)
+  const clientName = input.clientName?.trim() || 'o cliente'
+  const decisionDate = input.decisionDate ? formatValue(input.decisionDate) : 'na data da decisão'
+  const reason = input.denialReason?.trim() || 'motivo não informado'
+  const niss = input.niss?.trim()
 
   if (normalizedStatus === 'NEGADO') {
-    return 'O pedido de NISS foi negado até o momento. O processo não avançou para a concessão do benefício e a decisão deve ser analisada com atenção para verificar a necessidade de revisão ou novo encaminhamento.'
+    return `O pedido de NISS de ${clientName} foi reprovado em ${decisionDate}, com indicação de ${reason}. O procedimento não avançou para a concessão do benefício, razão pela qual a decisão requer análise cuidadosa quanto à necessidade de revisão ou de novo encaminhamento.`
   }
 
   if (normalizedStatus === 'CONCLUIDO' || normalizedStatus === 'APROVADO') {
-    return 'O pedido de NISS foi aprovado até o momento. O processo já apresentou resultado favorável e a concessão do benefício pode ser acompanhada com tranquilidade para fins de comunicação ao cliente.'
+    const nissText = niss ? ` O número NISS associado é ${niss}.` : ''
+    return `O pedido de NISS de ${clientName} foi aprovado em ${decisionDate}. O processo apresentou resultado favorável${nissText} A evolução do procedimento poderá ser acompanhada com vistas à comunicação formal ao cliente.`
   }
 
-  return 'O pedido de NISS segue em análise. O processo ainda não recebeu decisão definitiva, mas já está sendo acompanhado e pode evoluir com novas atualizações.'
+  return `O pedido de NISS de ${clientName} segue em análise. O procedimento ainda não recebeu decisão definitiva, mas encontra-se sob acompanhamento, podendo evoluir com novas atualizações.`
 }
 
 export function buildDossierSections(dossier: Record<string, unknown>): DossierSection[] {
@@ -81,7 +92,16 @@ export function buildDossierSections(dossier: Record<string, unknown>): DossierS
   const summarySection: DossierSection = {
     title: 'Resumo do processo',
     entries: [
-      { label: 'Resumo', value: buildDossierSummary({ status, denialReason: solicitacao.motivo_negacao as string | null | undefined }) },
+      {
+        label: 'Resumo',
+        value: buildDossierSummary({
+          status,
+          clientName: (cidadao.nome || cidadao.nome_completo || cidadao.full_name) as string | null | undefined,
+          decisionDate: processo.data_estado_pedido || processo.data_estado_pedido_epoch_ms || solicitacao.atualizado_em,
+          denialReason: solicitacao.motivo_negacao as string | null | undefined,
+          niss: processo.niss_ee as string | null | undefined,
+        }),
+      },
     ],
   }
 
