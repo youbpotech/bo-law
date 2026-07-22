@@ -124,17 +124,3 @@ apps/
 docs/          # fluxo de domínio e implantação
 docker/        # configuração do Nginx
 ```
-
-## Atualização a partir da base anterior
-
-A migration consolidada preserva empresas, usuários, clientes, contatos e mensagens e
-remove as tabelas de backoffice que existiam apenas para dossiês, recomendações e tokens
-da API imobiliária. O schema externo legado de catálogo não é apagado automaticamente,
-pois pode ser compartilhado com outro serviço.
-
-Se existirem usuários, clientes ou leads globais sem empresa e mais de uma empresa
-cadastrada, a migration para deliberadamente. Associe cada registro à empresa correta
-antes de executá-la; atribuir todos ao tenant padrão poderia expor dados entre escritórios.
-Scores e orçamentos imobiliários anteriores não são convertidos em qualificação jurídica ou
-honorários. A migration é intencionalmente irreversível; use backup para voltar à versão
-anterior.

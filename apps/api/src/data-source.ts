@@ -11,6 +11,7 @@ import { LegalCase } from './entities/LegalCase'
 import { User } from './entities/User'
 import { CreateLegalBackoffice1784678400000 } from './migrations/1784678400000-CreateLegalBackoffice'
 import { AddCompanyLogo1784764800000 } from './migrations/1784764800000-AddCompanyLogo'
+import { ExpandClientProfile1784851200000 } from './migrations/1784851200000-ExpandClientProfile'
 
 config()
 
@@ -40,6 +41,10 @@ export const AppDataSource = new DataSource({
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
   entities: [User, Company, Client, Lead, LeadMessage, LeadAudioProcessing, LegalCase, Invoice],
-  migrations: [CreateLegalBackoffice1784678400000, AddCompanyLogo1784764800000],
+  migrations: [
+    CreateLegalBackoffice1784678400000,
+    AddCompanyLogo1784764800000,
+    ExpandClientProfile1784851200000,
+  ],
   subscribers: [],
 })

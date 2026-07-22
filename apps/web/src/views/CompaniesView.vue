@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
@@ -45,14 +45,22 @@ const pendingLogoDataUrl = ref<string | null>(null)
 const pendingLogoDimensions = ref<{ width: number; height: number } | null>(null)
 const pendingLogoError = ref('')
 const pendingLogoFileName = ref('')
+const cropCanvas = ref<HTMLCanvasElement | null>(null)
+const cropZoom = ref(1)
+const cropPanX = ref(0)
+const cropPanY = ref(0)
+let cropImage: HTMLImageElement | null = null
+let activePointerId: number | null = null
+let lastPointerX = 0
+let lastPointerY = 0
 
 const LOGO_MAX_BYTES = 512 * 1024
-const LOGO_MIN_WIDTH = 120
-const LOGO_MAX_WIDTH = 1200
-const LOGO_MIN_HEIGHT = 32
-const LOGO_MAX_HEIGHT = 320
-const LOGO_MIN_RATIO = 1.5
-const LOGO_MAX_RATIO = 8
+const LOGO_SOURCE_MAX_BYTES = 5 * 1024 * 1024
+const LOGO_SOURCE_MIN_WIDTH = 168
+const LOGO_SOURCE_MIN_HEIGHT = 40
+const LOGO_SOURCE_MAX_DIMENSION = 16000
+const LOGO_OUTPUT_WIDTH = 1024
+const LOGO_OUTPUT_HEIGHT = 256
 
 const filteredCompanies = computed(() => {
   const term = search.value.trim().toLowerCase()
@@ -108,6 +116,10 @@ function openLogoDialog(): void {
   pendingLogoDimensions.value = null
   pendingLogoError.value = ''
   pendingLogoFileName.value = ''
+  cropImage = null
+  cropZoom.value = 1
+  cropPanX.value = 0
+  cropPanY.value = 0
   isLogoDialogOpen.value = true
 }
 
@@ -117,6 +129,7 @@ function closeLogoDialog(): void {
   pendingLogoDimensions.value = null
   pendingLogoError.value = ''
   pendingLogoFileName.value = ''
+  cropImage = null
 }
 
 function formatTheme(theme: string): string {
@@ -133,12 +146,110 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
-function readImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image()
-    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+    image.onload = () => resolve(image)
     image.onerror = () => reject(new Error('Não foi possível ler as dimensões da imagem'))
     image.src = dataUrl
+  })
+}
+
+async function createCropImage(image: HTMLImageElement): Promise<HTMLImageElement> {
+  const maxDimension = Math.max(image.naturalWidth, image.naturalHeight)
+  if (maxDimension <= 2400) return image
+
+  const scale = 2400 / maxDimension
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(image.naturalWidth * scale)
+  canvas.height = Math.round(image.naturalHeight * scale)
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error(t('companies.logoCropError'))
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  const resizedImage = await loadImage(canvas.toDataURL('image/webp', 0.92))
+  image.src = ''
+  return resizedImage
+}
+
+function drawCropPreview(): void {
+  const canvas = cropCanvas.value
+  if (!canvas || !cropImage) return
+  const context = canvas.getContext('2d')
+  if (!context) return
+
+  const baseScale = Math.max(
+    LOGO_OUTPUT_WIDTH / cropImage.naturalWidth,
+    LOGO_OUTPUT_HEIGHT / cropImage.naturalHeight,
+  )
+  const scale = baseScale * cropZoom.value
+  const width = cropImage.naturalWidth * scale
+  const height = cropImage.naturalHeight * scale
+  const overflowX = Math.max(0, (width - LOGO_OUTPUT_WIDTH) / 2)
+  const overflowY = Math.max(0, (height - LOGO_OUTPUT_HEIGHT) / 2)
+  const x = (LOGO_OUTPUT_WIDTH - width) / 2 + cropPanX.value * overflowX
+  const y = (LOGO_OUTPUT_HEIGHT - height) / 2 + cropPanY.value * overflowY
+
+  context.clearRect(0, 0, LOGO_OUTPUT_WIDTH, LOGO_OUTPUT_HEIGHT)
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, LOGO_OUTPUT_WIDTH, LOGO_OUTPUT_HEIGHT)
+  context.drawImage(cropImage, x, y, width, height)
+}
+
+watch([cropZoom, cropPanX, cropPanY], drawCropPreview)
+
+function handleCropPointerDown(event: PointerEvent): void {
+  activePointerId = event.pointerId
+  lastPointerX = event.clientX
+  lastPointerY = event.clientY
+  cropCanvas.value?.setPointerCapture(event.pointerId)
+}
+
+function handleCropPointerMove(event: PointerEvent): void {
+  if (activePointerId !== event.pointerId || !cropCanvas.value || !cropImage) return
+  const rect = cropCanvas.value.getBoundingClientRect()
+  const scale = Math.max(
+    LOGO_OUTPUT_WIDTH / cropImage.naturalWidth,
+    LOGO_OUTPUT_HEIGHT / cropImage.naturalHeight,
+  ) * cropZoom.value
+  const overflowX = Math.max(0, (cropImage.naturalWidth * scale - LOGO_OUTPUT_WIDTH) / 2)
+  const overflowY = Math.max(0, (cropImage.naturalHeight * scale - LOGO_OUTPUT_HEIGHT) / 2)
+  const deltaX = ((event.clientX - lastPointerX) * LOGO_OUTPUT_WIDTH) / rect.width
+  const deltaY = ((event.clientY - lastPointerY) * LOGO_OUTPUT_HEIGHT) / rect.height
+  if (overflowX > 0) cropPanX.value = Math.max(-1, Math.min(1, cropPanX.value + deltaX / overflowX))
+  if (overflowY > 0) cropPanY.value = Math.max(-1, Math.min(1, cropPanY.value + deltaY / overflowY))
+  lastPointerX = event.clientX
+  lastPointerY = event.clientY
+}
+
+function handleCropPointerUp(event: PointerEvent): void {
+  if (activePointerId !== event.pointerId) return
+  cropCanvas.value?.releasePointerCapture(event.pointerId)
+  activePointerId = null
+}
+
+function canvasToDataUrl(canvas: HTMLCanvasElement): Promise<string> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error(t('companies.logoCropError')))
+          return
+        }
+        if (blob.size > LOGO_MAX_BYTES) {
+          reject(new Error(t('companies.logoSizeError')))
+          return
+        }
+        const reader = new FileReader()
+        reader.onload = () =>
+          typeof reader.result === 'string'
+            ? resolve(reader.result)
+            : reject(new Error(t('companies.logoCropError')))
+        reader.onerror = () => reject(new Error(t('companies.logoCropError')))
+        reader.readAsDataURL(blob)
+      },
+      'image/webp',
+      0.9,
+    )
   })
 }
 
@@ -155,36 +266,47 @@ async function handleLogoUpload(event: Event): Promise<void> {
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       throw new Error(t('companies.logoFormatError'))
     }
-    if (file.size > LOGO_MAX_BYTES) throw new Error(t('companies.logoSizeError'))
+    if (file.size > LOGO_SOURCE_MAX_BYTES) throw new Error(t('companies.logoSourceSizeError'))
 
     const dataUrl = await readFileAsDataUrl(file)
-    const { width, height } = await readImageDimensions(dataUrl)
-    const ratio = width / height
+    const image = await loadImage(dataUrl)
+    const width = image.naturalWidth
+    const height = image.naturalHeight
     if (
-      width < LOGO_MIN_WIDTH ||
-      width > LOGO_MAX_WIDTH ||
-      height < LOGO_MIN_HEIGHT ||
-      height > LOGO_MAX_HEIGHT ||
-      ratio < LOGO_MIN_RATIO ||
-      ratio > LOGO_MAX_RATIO
+      width < LOGO_SOURCE_MIN_WIDTH ||
+      height < LOGO_SOURCE_MIN_HEIGHT ||
+      width > LOGO_SOURCE_MAX_DIMENSION ||
+      height > LOGO_SOURCE_MAX_DIMENSION
     ) {
-      throw new Error(t('companies.logoDimensionsError'))
+      throw new Error(t('companies.logoSourceDimensionsError'))
     }
 
+    cropImage = await createCropImage(image)
     pendingLogoDataUrl.value = dataUrl
     pendingLogoDimensions.value = { width, height }
     pendingLogoFileName.value = file.name
+    cropZoom.value = 1
+    cropPanX.value = 0
+    cropPanY.value = 0
+    await nextTick()
+    drawCropPreview()
   } catch (error) {
     input.value = ''
     pendingLogoError.value = error instanceof Error ? error.message : t('companies.logoInvalid')
   }
 }
 
-function confirmLogo(): void {
-  if (!pendingLogoDataUrl.value) return
-  form.logoDataUrl = pendingLogoDataUrl.value
-  logoPreview.value = pendingLogoDataUrl.value
-  closeLogoDialog()
+async function confirmLogo(): Promise<void> {
+  if (!cropCanvas.value || !cropImage) return
+  pendingLogoError.value = ''
+  try {
+    const croppedDataUrl = await canvasToDataUrl(cropCanvas.value)
+    form.logoDataUrl = croppedDataUrl
+    logoPreview.value = croppedDataUrl
+    closeLogoDialog()
+  } catch (error) {
+    pendingLogoError.value = error instanceof Error ? error.message : t('companies.logoCropError')
+  }
 }
 
 function removeLogo(): void {
@@ -352,11 +474,11 @@ function formatDate(value: string): string {
 
       <div class="space-y-2">
         <span class="text-sm font-medium">{{ $t('companies.logo') }}</span>
-        <div v-if="logoPreview" class="flex h-16 items-center rounded-md border px-4">
+        <div v-if="logoPreview" class="h-16 w-64 overflow-hidden rounded-md border">
           <img
             :src="logoPreview"
             :alt="$t('companies.logoPreview')"
-            class="max-h-10 max-w-[168px] object-contain"
+            class="h-full w-full object-cover"
           />
         </div>
         <div class="flex flex-wrap gap-2">
@@ -390,7 +512,7 @@ function formatDate(value: string): string {
 
   <Dialog
     :open="isLogoDialogOpen"
-    class="max-w-xl"
+    class="max-h-[90vh] max-w-xl overflow-y-auto"
     @update:open="(open) => !open && closeLogoDialog()"
   >
     <div class="space-y-1">
@@ -422,20 +544,40 @@ function formatDate(value: string): string {
       />
     </div>
 
-    <div v-if="pendingLogoDataUrl" class="space-y-2">
-      <p class="text-sm font-medium">{{ $t('companies.logoPreview') }}</p>
-      <div class="flex h-16 items-center rounded-md border bg-background px-4">
-        <img
-          :src="pendingLogoDataUrl"
-          :alt="$t('companies.logoPreview')"
-          class="max-h-10 max-w-[168px] object-contain"
+    <div v-if="pendingLogoDataUrl" class="space-y-3">
+      <div>
+        <p class="text-sm font-medium">{{ $t('companies.logoCropTitle') }}</p>
+        <p class="text-xs text-muted-foreground">{{ $t('companies.logoCropHelp') }}</p>
+      </div>
+      <div class="overflow-hidden rounded-md border bg-muted shadow-inner">
+        <canvas
+          ref="cropCanvas"
+          :width="LOGO_OUTPUT_WIDTH"
+          :height="LOGO_OUTPUT_HEIGHT"
+          class="block aspect-[4/1] w-full cursor-grab touch-none active:cursor-grabbing"
+          @pointerdown="handleCropPointerDown"
+          @pointermove="handleCropPointerMove"
+          @pointerup="handleCropPointerUp"
+          @pointercancel="handleCropPointerUp"
         />
       </div>
+      <label for="company-logo-zoom" class="block space-y-1 text-sm">
+        <span class="font-medium">{{ $t('companies.logoZoom') }}</span>
+        <input
+          id="company-logo-zoom"
+          v-model.number="cropZoom"
+          type="range"
+          min="1"
+          max="3"
+          step="0.01"
+          class="w-full accent-primary"
+        />
+      </label>
       <p class="text-xs text-muted-foreground">
         {{ pendingLogoFileName }} · {{ pendingLogoDimensions?.width }} ×
         {{ pendingLogoDimensions?.height }} px
       </p>
-      <p class="text-sm text-primary">{{ $t('companies.logoValid') }}</p>
+      <p class="text-sm text-primary">{{ $t('companies.logoCropReady') }}</p>
     </div>
 
     <p v-if="pendingLogoError" class="text-sm text-destructive">{{ pendingLogoError }}</p>

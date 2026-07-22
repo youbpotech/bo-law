@@ -22,6 +22,7 @@ import { normalizeWhatsappPhone } from '../leads/twilio-service'
 import { casesRouter } from './cases'
 import { dashboardRouter, normalizeDashboardConfig } from './dashboard'
 import { parseCompanyLogo } from '../company-logo'
+import { applyClientProfileInput } from '../client-profile'
 
 const router = Router()
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -469,13 +470,21 @@ router.post('/clients', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Nome do cliente é obrigatório' })
     return
   }
+  if (name.length > 200) {
+    res.status(400).json({ error: 'Nome do cliente excede 200 caracteres' })
+    return
+  }
   const repository = AppDataSource.getRepository(Client)
   const client = repository.create({
     name,
-    email: normalizeNullableText(req.body.email),
-    phone: normalizeNullableText(req.body.phone),
     companyId: currentUser.companyId,
   })
+  try {
+    applyClientProfileInput(client, req.body)
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Dados do cliente inválidos' })
+    return
+  }
   res.status(201).json(await repository.save(client))
 })
 
@@ -497,9 +506,17 @@ router.put('/clients/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Nome do cliente é obrigatório' })
     return
   }
+  if (name.length > 200) {
+    res.status(400).json({ error: 'Nome do cliente excede 200 caracteres' })
+    return
+  }
   client.name = name
-  client.email = normalizeNullableText(req.body.email)
-  client.phone = normalizeNullableText(req.body.phone)
+  try {
+    applyClientProfileInput(client, req.body)
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Dados do cliente inválidos' })
+    return
+  }
   res.json(await repository.save(client))
 })
 

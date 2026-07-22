@@ -11,9 +11,9 @@ function pngDataUrl(width: number, height: number): string {
 }
 
 describe('parseCompanyLogo', () => {
-  it('aceita uma logomarca horizontal dentro dos limites', () => {
-    const logo = parseCompanyLogo(pngDataUrl(600, 120))
-    expect(logo).toMatchObject({ mimeType: 'image/png', width: 600, height: 120 })
+  it('aceita a medida gerada pelo recortador para o cabeçalho', () => {
+    const logo = parseCompanyLogo(pngDataUrl(1024, 256))
+    expect(logo).toMatchObject({ mimeType: 'image/png', width: 1024, height: 256 })
   })
 
   it('rejeita uma imagem quadrada inadequada ao cabeçalho', () => {

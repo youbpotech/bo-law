@@ -19,18 +19,20 @@
     "
     v-bind="attrs"
   >
-    <div class="flex h-16 items-center justify-between border-b px-6">
+    <div
+      class="relative flex h-16 shrink-0 items-center overflow-hidden after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-px after:bg-border after:content-['']"
+    >
       <img
         v-if="resolvedLogoUrl"
         :src="resolvedLogoUrl"
         :alt="companyName || 'Logomarca da empresa'"
-        class="max-h-10 max-w-[168px] object-contain"
+        class="absolute inset-0 h-full w-full object-cover"
       />
-      <h2 v-else class="text-lg font-semibold">Backoffice Jurídico</h2>
+      <h2 v-else class="px-6 text-lg font-semibold">Backoffice Jurídico</h2>
       <button
         type="button"
         @click="$emit('close')"
-        class="lg:hidden rounded-md p-1 hover:bg-accent"
+        class="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-md bg-background/80 p-1 backdrop-blur-sm hover:bg-accent lg:hidden"
         aria-label="Fechar menu"
       >
         <X class="h-5 w-5" />

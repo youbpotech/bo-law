@@ -68,10 +68,12 @@
         <template #breadcrumb>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbLink href="/">{{ $t('navigation.dashboard') }}</BreadcrumbLink>
+              <BreadcrumbLink href="/" :aria-label="$t('navigation.dashboard')">
+                <Home class="h-4 w-4" />
+              </BreadcrumbLink>
             </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
+            <BreadcrumbSeparator v-if="route.path !== '/'" />
+            <BreadcrumbItem v-if="route.path !== '/'">
               <span class="text-foreground">{{ currentPageTitle }}</span>
             </BreadcrumbItem>
           </Breadcrumb>
@@ -139,6 +141,9 @@
       <main class="flex-1 overflow-auto p-6">
         <slot />
       </main>
+      <footer class="border-t px-6 py-3 text-center text-xs text-muted-foreground">
+        Copyright YouBPO - {{ currentYear }} - v. 0.1
+      </footer>
     </div>
   </div>
 </template>
@@ -155,9 +160,10 @@ import {
   ChevronDown,
   UserCheck,
   Building2,
-  BriefcaseBusiness,
+  ChartNoAxesColumn,
+  DollarSign,
+  Scale,
 } from 'lucide-vue-next'
-import WhatsAppIcon from '@/components/icons/WhatsAppIcon.vue'
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
 import Button from '@/components/ui/Button.vue'
@@ -188,6 +194,7 @@ const isSidebarOpen = ref(false)
 // State for open submenus
 const openSubmenus = ref<Record<string, boolean>>({})
 const isProfileMenuOpen = ref(false)
+const currentYear = new Date().getFullYear()
 
 // Funções para controlar a sidebar
 const alternarSidebar = () => {
@@ -246,7 +253,7 @@ watch(
 )
 
 const navigationItems = computed(() => [
-  { name: t('navigation.dashboard'), href: '/', icon: Home },
+  { name: t('navigation.dashboard'), href: '/', icon: ChartNoAxesColumn },
   {
     name: t('navigation.registrations'),
     icon: UserCheck,
@@ -258,8 +265,8 @@ const navigationItems = computed(() => [
         : []),
     ],
   },
-  { name: t('navigation.leads'), href: '/leads', icon: WhatsAppIcon },
-  { name: t('navigation.cases'), href: '/cases', icon: BriefcaseBusiness },
+  { name: t('navigation.leads'), href: '/leads', icon: DollarSign },
+  { name: t('navigation.cases'), href: '/cases', icon: Scale },
 ])
 
 // Toggle submenu

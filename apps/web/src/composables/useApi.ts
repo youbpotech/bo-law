@@ -45,8 +45,47 @@ export interface User {
 export interface Client {
   id: string
   name: string
+  surname?: string | null
+  portugueseTaxId?: string | null
+  foreignTaxId?: string | null
+  foreignTaxIdType?: string | null
+  birthDate?: string | null
+  sex?: string | null
+  maritalStatus?: string | null
+  parent1Name?: string | null
+  parent1Surname?: string | null
+  parent2Name?: string | null
+  parent2Surname?: string | null
+  nationalityCountry?: string | null
+  birthCountry?: string | null
+  birthProvince?: string | null
+  birthProvinceCode?: string | null
+  birthPlace?: string | null
+  birthDistrictId?: number | null
+  birthMunicipalityId?: number | null
+  birthParishId?: number | null
+  civilDocumentType?: string | null
+  civilDocumentNumber?: string | null
+  civilDocumentExpiryDate?: string | null
   email?: string | null
+  mobileCountryCode?: string | null
+  mobile?: string | null
+  phoneCountryCode?: string | null
   phone?: string | null
+  residenceCountry?: string | null
+  residenceAddress?: string | null
+  residenceLocality?: string | null
+  residencePostalCode?: string | null
+  residencePostalLocality?: string | null
+  residenceDistrictId?: number | null
+  residenceMunicipalityId?: number | null
+  residenceParishId?: number | null
+  foreignAddress?: string | null
+  foreignAddress1?: string | null
+  foreignAddress2?: string | null
+  foreignCity?: string | null
+  foreignRegion?: string | null
+  foreignPostalCode?: string | null
   companyId: number
   createdAt: string
   updatedAt: string
@@ -59,11 +98,10 @@ export interface UserInput {
   password?: string
 }
 
-export interface ClientInput {
-  name: string
-  email?: string | null
-  phone?: string | null
-}
+export type ClientInput = Pick<Client, 'name'> &
+  Partial<
+    Omit<Client, 'id' | 'name' | 'companyId' | 'createdAt' | 'updatedAt'>
+  >
 
 export interface CompanyInput {
   name: string
