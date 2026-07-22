@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import { buildDossierSections } from '@/lib/niss-dossier'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -24,21 +25,14 @@ defineEmits<{ (e: 'update:open', value: boolean): void }>()
 const isExporting = ref(false)
 const contentRef = ref<HTMLElement | null>(null)
 
-function humanizeKey(key: string): string {
-  return key
-    .replace(/_/g, ' ')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/^./, (char) => char.toUpperCase())
-}
-
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
   if (typeof value === 'number') return String(value)
   const str = String(value)
   if (/^\d{4}-\d{2}-\d{2}(T|\s)/.test(str)) {
     try {
-      return new Intl.DateTimeFormat('pt-PT', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(str))
+      return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(str))
     } catch {
       return str
     }
@@ -46,38 +40,10 @@ function formatValue(value: unknown): string {
   return str
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isArrayOfObjects(value: unknown): value is Record<string, unknown>[] {
-  return Array.isArray(value) && value.length > 0 && value.every((item) => isObject(item))
-}
-
-function isPrimitive(value: unknown): boolean {
-  return value === null || value === undefined || typeof value !== 'object'
-}
-
-const flatEntries = computed(() => {
+const sections = computed(() => {
   if (!props.dossier) return []
-  return Object.entries(props.dossier).filter(([, value]) => isPrimitive(value))
+  return buildDossierSections(props.dossier as Record<string, unknown>)
 })
-
-const objectEntries = computed(() => {
-  if (!props.dossier) return []
-  return Object.entries(props.dossier).filter(([, value]) => isObject(value))
-})
-
-const arrayEntries = computed(() => {
-  if (!props.dossier) return []
-  return Object.entries(props.dossier).filter(([, value]) => Array.isArray(value))
-})
-
-function objectKeys(arr: Record<string, unknown>[]): string[] {
-  const keys = new Set<string>()
-  arr.forEach((item) => Object.keys(item).forEach((key) => keys.add(key)))
-  return Array.from(keys)
-}
 
 async function loadLogoAsDataUrl(): Promise<string | null> {
   if (!props.logoUrl) return null
@@ -223,83 +189,36 @@ defineExpose({ generatePdf: exportPdf })
       <p v-if="isLoading" class="py-8 text-center text-muted-foreground">Carregando dossiê...</p>
       <p v-else-if="error" class="rounded-md bg-destructive/5 p-3 text-sm text-destructive">{{ error }}</p>
 
-      <div v-else-if="dossier" ref="contentRef" class="space-y-5">
-        <!-- Primitive fields -->
-        <div v-if="flatEntries.length" class="rounded-md border">
-          <div class="grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-y-0">
+      <div v-else-if="dossier" ref="contentRef" class="space-y-6 rounded-lg border bg-background p-5 shadow-sm">
+        <div class="rounded-lg border border-border/70 bg-muted/20 p-4">
+          <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p class="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Dossiê NISS</p>
+              <h3 class="mt-1 text-2xl font-semibold text-foreground">Pedido {{ processId }}</h3>
+              <p class="mt-2 max-w-3xl text-sm text-muted-foreground">
+                Documento preparado para acompanhamento do advogado e do cliente, com foco nas informações relevantes para a análise do processo.
+              </p>
+            </div>
+            <div v-if="companyName" class="rounded-md border bg-background px-3 py-2 text-sm font-medium text-muted-foreground">
+              {{ companyName }}
+            </div>
+          </div>
+        </div>
+
+        <div v-for="section in sections" :key="section.title" class="space-y-3">
+          <div class="border-b pb-2">
+            <h4 class="text-base font-semibold text-foreground">{{ section.title }}</h4>
+          </div>
+          <div class="grid gap-3 md:grid-cols-2">
             <div
-              v-for="([key, value], index) in flatEntries"
-              :key="key"
-              :class="[
-                'flex flex-col gap-0.5 px-4 py-3',
-                index % 2 === 0 ? 'bg-muted/30' : 'bg-background',
-                'sm:border-b',
-              ]"
+              v-for="entry in section.entries"
+              :key="entry.label"
+              class="rounded-md border border-border/70 bg-muted/10 p-3"
             >
-              <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ humanizeKey(key) }}</span>
-              <span class="text-sm font-medium">{{ formatValue(value) }}</span>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ entry.label }}</p>
+              <p class="mt-1 text-sm leading-6 text-foreground whitespace-pre-line">{{ entry.value }}</p>
             </div>
           </div>
-        </div>
-
-        <!-- Nested objects -->
-        <div v-for="[key, value] in objectEntries" :key="key" class="space-y-2">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{{ humanizeKey(key) }}</h3>
-          <div class="rounded-md border">
-            <div class="grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-y-0">
-              <div
-                v-for="([subKey, subValue], subIndex) in Object.entries(value as Record<string, unknown>)"
-                :key="subKey"
-                :class="[
-                  'flex flex-col gap-0.5 px-4 py-3',
-                  subIndex % 2 === 0 ? 'bg-muted/30' : 'bg-background',
-                  'sm:border-b',
-                ]"
-              >
-                <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ humanizeKey(subKey) }}</span>
-                <span v-if="isPrimitive(subValue)" class="text-sm font-medium">{{ formatValue(subValue) }}</span>
-                <pre v-else class="max-w-full overflow-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">{{ JSON.stringify(subValue, null, 2) }}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Arrays -->
-        <div v-for="[key, value] in arrayEntries" :key="key" class="space-y-2">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{{ humanizeKey(key) }}</h3>
-          <!-- Array of objects → table -->
-          <div v-if="isArrayOfObjects(value)" class="overflow-auto rounded-md border">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b bg-muted/50">
-                  <th
-                    v-for="col in objectKeys(value)"
-                    :key="col"
-                    class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                  >
-                    {{ humanizeKey(col) }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, rowIndex) in value" :key="rowIndex" class="border-b last:border-0">
-                  <td
-                    v-for="col in objectKeys(value)"
-                    :key="col"
-                    class="px-3 py-2"
-                  >
-                    {{ isPrimitive(row[col]) ? formatValue(row[col]) : JSON.stringify(row[col]) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <!-- Simple array → list -->
-          <ul v-else class="space-y-1 rounded-md border p-3">
-            <li v-for="(item, i) in (value as unknown[])" :key="i" class="text-sm">
-              {{ isPrimitive(item) ? formatValue(item) : JSON.stringify(item) }}
-            </li>
-          </ul>
         </div>
       </div>
 
