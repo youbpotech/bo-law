@@ -18,11 +18,13 @@ import type { DashboardWidgetKey } from '@/composables/useApi'
 import { DEFAULT_DASHBOARD_WIDGETS, useDashboard } from '@/features/dashboard/useDashboard'
 
 const { t, locale } = useI18n()
-const { widgets, stats, isLoading, error, saveWidgets, isSaving, refresh } = useDashboard()
+const { widgets, stats, isLoading, isRefreshing, error, saveWidgets, isSaving, refresh } =
+  useDashboard()
 
 const isConfigOpen = ref(false)
 const draftWidgets = ref<DashboardWidgetKey[]>([])
 const configError = ref('')
+const refreshFeedback = ref<'success' | 'error' | null>(null)
 
 const widgetOptions: Array<{ key: DashboardWidgetKey; icon: typeof UsersRound }> = [
   { key: 'totalLeads', icon: UsersRound },
@@ -79,6 +81,19 @@ async function persistWidgets(): Promise<void> {
   }
 }
 
+async function refreshDashboard(): Promise<void> {
+  refreshFeedback.value = null
+  try {
+    await refresh()
+    refreshFeedback.value = 'success'
+    window.setTimeout(() => {
+      if (refreshFeedback.value === 'success') refreshFeedback.value = null
+    }, 3000)
+  } catch {
+    refreshFeedback.value = 'error'
+  }
+}
+
 function widgetIcon(key: DashboardWidgetKey) {
   return widgetOptions.find((widget) => widget.key === key)?.icon ?? UsersRound
 }
@@ -107,15 +122,32 @@ function formatDate(value: string): string {
         <p class="text-muted-foreground">{{ $t('dashboard.subtitle') }}</p>
       </div>
       <div class="flex gap-2">
-        <Button variant="outline" :disabled="isLoading" @click="refresh">
-          <RefreshCw :class="['mr-2 h-4 w-4', isLoading ? 'animate-spin' : '']" />
-          {{ $t('common.refresh') }}
+        <Button variant="outline" :disabled="isLoading || isRefreshing" @click="refreshDashboard">
+          <RefreshCw :class="['mr-2 h-4 w-4', isRefreshing ? 'animate-spin' : '']" />
+          {{ isRefreshing ? $t('dashboard.refreshing') : $t('common.refresh') }}
         </Button>
         <Button variant="outline" @click="openConfig">
           <Settings2 class="mr-2 h-4 w-4" />
           {{ $t('dashboard.configure') }}
         </Button>
       </div>
+    </div>
+
+    <div
+      v-if="refreshFeedback === 'success'"
+      role="status"
+      aria-live="polite"
+      class="rounded-md border border-green-600/30 bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-400"
+    >
+      {{ $t('dashboard.refreshSuccess') }}
+    </div>
+
+    <div
+      v-else-if="refreshFeedback === 'error'"
+      role="alert"
+      class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+    >
+      {{ $t('dashboard.refreshError') }}
     </div>
 
     <div

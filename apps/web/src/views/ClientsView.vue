@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import Input from '@/components/ui/Input.vue'
@@ -15,6 +16,8 @@ import { useClients, type Client, type ClientInput } from '@/composables/useApi'
 import { Plus, Search, Users } from 'lucide-vue-next'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const { clients, isLoading, error, criarCliente, atualizarCliente, excluirCliente, isCreating, isUpdating, isDeleting } = useClients()
 
 type FormValue = string | number | undefined
@@ -114,6 +117,9 @@ async function saveClient(): Promise<void> {
     if (editingClient.value) await atualizarCliente({ id: editingClient.value.id, dados: data })
     else await criarCliente(data)
     closeDialog()
+    if (typeof route.query.returnTo === 'string') {
+      await router.push({ path: route.query.returnTo, query: route.query.newNiss === '1' ? { newNiss: '1' } : {} })
+    }
   } catch (caughtError) { formError.value = caughtError instanceof Error ? caughtError.message : t('clients.saveError') }
 }
 async function deleteClient(client: Client): Promise<void> {
@@ -121,6 +127,7 @@ async function deleteClient(client: Client): Promise<void> {
   try { await excluirCliente(client.id) } catch (caughtError) { window.alert(caughtError instanceof Error ? caughtError.message : t('clients.deleteError')) }
 }
 function formatDate(value: string): string { return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) }
+onMounted(() => { if (route.query.new === '1') openCreateDialog() })
 </script>
 
 <template>

@@ -1,4 +1,5 @@
 export const AUTH_STORAGE_KEY = 'bo-auth-token'
+export const ACTIVE_COMPANY_STORAGE_KEY = 'bo-active-company-id'
 
 interface TokenPayload {
   exp: number
@@ -14,6 +15,16 @@ export function setAuthToken(token: string): void {
 
 export function clearAuthToken(): void {
   localStorage.removeItem(AUTH_STORAGE_KEY)
+  localStorage.removeItem(ACTIVE_COMPANY_STORAGE_KEY)
+}
+
+export function getActiveCompanyId(): number | null {
+  const value = Number(localStorage.getItem(ACTIVE_COMPANY_STORAGE_KEY))
+  return Number.isInteger(value) && value > 0 ? value : null
+}
+
+export function setActiveCompanyId(companyId: number): void {
+  localStorage.setItem(ACTIVE_COMPANY_STORAGE_KEY, String(companyId))
 }
 
 export function isAuthenticated(): boolean {
@@ -24,7 +35,7 @@ export function isAuthenticated(): boolean {
   }
 
   try {
-    const [encodedPayload] = token.split('.')
+    const [, encodedPayload] = token.split('.')
 
     if (!encodedPayload) {
       return false

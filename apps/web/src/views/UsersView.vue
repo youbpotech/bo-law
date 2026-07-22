@@ -9,7 +9,7 @@ import TableBody from '@/components/ui/TableBody.vue'
 import TableRow from '@/components/ui/TableRow.vue'
 import TableHead from '@/components/ui/TableHead.vue'
 import TableCell from '@/components/ui/TableCell.vue'
-import { useSession, useUsers, type User } from '@/composables/useApi'
+import { useRoles, useSession, useUsers, type User } from '@/composables/useApi'
 import { Plus, Search } from 'lucide-vue-next'
 
 const {
@@ -24,7 +24,8 @@ const {
   isDeleting,
 } = useUsers()
 const { currentUser } = useSession()
-const canManageUsers = computed(() => Boolean(currentUser.value?.root))
+const canManageUsers = computed(() => Boolean(currentUser.value?.roleRoot))
+const { roles } = useRoles(canManageUsers)
 
 const search = ref('')
 const isDialogOpen = ref(false)
@@ -35,6 +36,7 @@ const form = reactive({
   username: '',
   email: '',
   password: '',
+  roleIds: [] as string[],
 })
 
 const filteredUsers = computed(() => {
@@ -56,6 +58,7 @@ function resetForm(): void {
   form.username = ''
   form.email = ''
   form.password = ''
+  form.roleIds = []
   formError.value = ''
 }
 
@@ -71,6 +74,7 @@ function openEditDialog(user: User): void {
   form.username = user.username
   form.email = user.email ?? ''
   form.password = ''
+  form.roleIds = [...(user.roleIds || [])]
   formError.value = ''
   isDialogOpen.value = true
 }
@@ -90,6 +94,7 @@ async function saveUser(): Promise<void> {
       username: form.username,
       email: form.email || undefined,
       password: form.password || undefined,
+      roleIds: form.roleIds,
     }
 
     if (editingUser.value) {
@@ -214,6 +219,17 @@ function formatDate(value: string): string {
         <label for="user-name" class="text-sm font-medium">{{ $t('users.name') }}</label>
         <Input id="user-name" v-model="form.name" required maxlength="255" />
       </div>
+
+      <fieldset class="space-y-2">
+        <legend class="text-sm font-medium">Roles</legend>
+        <div class="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
+          <label v-for="role in roles" :key="role.id" class="flex items-center gap-2 text-sm">
+            <input v-model="form.roleIds" type="checkbox" :value="role.id" class="h-4 w-4" />
+            <span>{{ role.name }}</span>
+          </label>
+          <p v-if="roles.length === 0" class="text-sm text-muted-foreground">Nenhuma role disponível.</p>
+        </div>
+      </fieldset>
 
       <div class="space-y-2">
         <label for="user-username" class="text-sm font-medium">{{ $t('users.username') }}</label>

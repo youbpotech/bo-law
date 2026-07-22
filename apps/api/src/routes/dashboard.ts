@@ -7,7 +7,7 @@ import {
   DEFAULT_DASHBOARD_WIDGETS,
 } from '../entities/Company'
 import { requireAuth } from '../auth/middleware'
-import { requireCurrentUser } from '../auth/current-user'
+import { requireResourceUser } from '../auth/current-user'
 
 export const dashboardRouter = Router()
 
@@ -38,14 +38,14 @@ export function normalizeDashboardConfig(value: unknown): DashboardConfig {
 }
 
 dashboardRouter.get('/dashboard', requireAuth, async (req, res) => {
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'dashboard')
   if (!user) return
 
   res.json(normalizeDashboardConfig(user.company.dashboardConfig))
 })
 
 dashboardRouter.put('/dashboard', requireAuth, async (req, res) => {
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'dashboard')
   if (!user) return
 
   const requestedWidgets = req.body?.widgets
@@ -55,13 +55,24 @@ dashboardRouter.put('/dashboard', requireAuth, async (req, res) => {
   }
 
   const config = normalizeDashboardConfig({ widgets: requestedWidgets })
-  user.company.dashboardConfig = config
-  await AppDataSource.getRepository(Company).save(user.company)
-  res.json(config)
+  try {
+    const result = await AppDataSource.getRepository(Company).update(
+      { id: user.companyId },
+      { dashboardConfig: config },
+    )
+    if (!result.affected) {
+      res.status(404).json({ error: 'Empresa não encontrada' })
+      return
+    }
+    res.json(config)
+  } catch (error) {
+    console.error('Falha ao atualizar a configuração do dashboard', error)
+    res.status(500).json({ error: 'Não foi possível atualizar o dashboard' })
+  }
 })
 
 dashboardRouter.get('/dashboard/stats', requireAuth, async (req, res) => {
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'dashboard')
   if (!user) return
 
   const [
@@ -114,7 +125,7 @@ dashboardRouter.get('/dashboard/stats', requireAuth, async (req, res) => {
       [user.companyId],
     ),
     AppDataSource.query(
-      `SELECT c."id", c."title", c."stage", c."updated_at" AS "updatedAt", cl."name" AS "clientName"
+      `SELECT c."id", c."title", c."stage", c."updated_at" AS "updatedAt", cl."nome" AS "clientName"
          FROM "bo"."legal_cases" c INNER JOIN "bo"."clients" cl ON cl."id" = c."client_id"
          WHERE c."company_id" = $1 ORDER BY c."updated_at" DESC LIMIT 5`,
       [user.companyId],

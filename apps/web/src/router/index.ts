@@ -22,6 +22,7 @@ const router = createRouter({
       component: HomeView,
       meta: {
         requiresAuth: true,
+        requiredResource: 'dashboard',
       },
     },
     {
@@ -30,7 +31,14 @@ const router = createRouter({
       component: () => import('../views/UsersView.vue'),
       meta: {
         requiresAuth: true,
+        requiredResource: 'users',
       },
+    },
+    {
+      path: '/roles',
+      name: 'roles',
+      component: () => import('../views/RolesView.vue'),
+      meta: { requiresAuth: true, requiredResource: 'roles', requiresRoleRoot: true },
     },
     {
       path: '/companies',
@@ -39,6 +47,7 @@ const router = createRouter({
       meta: {
         requiresAuth: true,
         requiresRoot: true,
+        requiredResource: 'companies',
       },
     },
     {
@@ -47,6 +56,7 @@ const router = createRouter({
       component: () => import('../views/ClientsView.vue'),
       meta: {
         requiresAuth: true,
+        requiredResource: 'clients',
       },
     },
     {
@@ -55,6 +65,7 @@ const router = createRouter({
       component: () => import('../views/LeadsView.vue'),
       meta: {
         requiresAuth: true,
+        requiredResource: 'leads',
       },
     },
     {
@@ -63,7 +74,14 @@ const router = createRouter({
       component: () => import('../views/CasesView.vue'),
       meta: {
         requiresAuth: true,
+        requiredResource: 'cases',
       },
+    },
+    {
+      path: '/niss',
+      name: 'niss',
+      component: () => import('../views/NissView.vue'),
+      meta: { requiresAuth: true, requiredResource: 'niss' },
     },
   ],
 })
@@ -93,6 +111,15 @@ async function hasRootAccess(): Promise<boolean> {
   }
 }
 
+async function getAccess(): Promise<{ root: boolean; roleRoot: boolean; permissions: string[] } | null> {
+  const token = getAuthToken()
+  if (!token) return null
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/me`, { headers: { Authorization: `Bearer ${token}` } })
+    return response.ok ? ((await response.json()) as { root: boolean; roleRoot: boolean; permissions: string[] }) : null
+  } catch { return null }
+}
+
 router.beforeEach(async (to) => {
   const hasValidAuthentication = isAuthenticated()
 
@@ -115,6 +142,16 @@ router.beforeEach(async (to) => {
       return {
         name: 'home',
       }
+    }
+  }
+
+  if ((to.meta.requiredResource || to.meta.requiresRoleRoot) && hasValidAuthentication) {
+    const access = await getAccess()
+    const resource = typeof to.meta.requiredResource === 'string' ? to.meta.requiredResource : null
+    if (!access || (to.meta.requiresRoleRoot && !access.roleRoot) || (resource && !access.root && !access.permissions.includes(resource))) {
+      const destinations: Record<string, string> = { dashboard: '/', users: '/users', roles: '/roles', clients: '/clients', companies: '/companies', leads: '/leads', cases: '/cases', niss: '/niss' }
+      const first = access?.permissions.find((key) => destinations[key])
+      return first ? destinations[first] : '/login'
     }
   }
 

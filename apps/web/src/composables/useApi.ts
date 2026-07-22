@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, type MaybeRefOrGetter, toValue } from 'vue'
-import { getAuthToken, setAuthToken } from '@/lib/auth'
+import { getActiveCompanyId, getAuthToken, setActiveCompanyId } from '@/lib/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -24,6 +24,8 @@ export interface Company {
   theme: string
   hasLogo: boolean
   logoUrl: string | null
+  hasFavicon: boolean
+  faviconUrl: string | null
   whatsappNumber?: string | null
   dashboardConfig: DashboardConfig
   createdAt: string
@@ -37,6 +39,9 @@ export interface User {
   email: string | null
   companyId: number
   root: boolean
+  roleRoot: boolean
+  permissions: ResourceKey[]
+  roleIds: string[]
   company?: Company | null
   createdAt: string
   updatedAt: string
@@ -96,6 +101,56 @@ export interface UserInput {
   username: string
   email?: string
   password?: string
+  roleIds: string[]
+}
+
+export type ResourceKey = 'dashboard' | 'users' | 'roles' | 'clients' | 'companies' | 'leads' | 'cases' | 'niss'
+
+export interface NissProcess {
+  id: string
+  clientId: string
+  requestNumber: string
+  email: string
+  birthDate: string
+  operationalStatus: number
+  operationalStatusName: 'A_CONSULTAR' | 'EM_CURSO' | 'NEGADO' | 'CONCLUIDO'
+  attempts: number
+  nextConsultationAt: string | null
+  lastAttemptAt: string | null
+  denialReason: string | null
+  portalStatus: string | null
+  niss: string | null
+  nissCommunicated: boolean | null
+  createdAt: string
+  updatedAt: string
+  client: Client
+}
+
+export interface NissInput {
+  clientId: string
+  requestNumber: string
+  email: string
+  birthDate: string
+}
+
+export interface ManagedRole {
+  id: string
+  name: string
+  description: string | null
+  isRoot: boolean
+  resources: ResourceKey[]
+}
+
+export interface ResourceDefinition {
+  key: ResourceKey
+  name: string
+  kind: 'resource' | 'process'
+}
+
+export interface RoleInput {
+  name: string
+  description?: string | null
+  resources: ResourceKey[]
 }
 
 export type ClientInput = Pick<Client, 'name'> &
@@ -107,6 +162,7 @@ export interface CompanyInput {
   name: string
   theme: string
   logoDataUrl?: string | null
+  faviconDataUrl?: string | null
   whatsappNumber?: string | null
   dashboardConfig?: DashboardConfig
 }
@@ -117,6 +173,7 @@ export async function authRequest<T>(url: string, options: RequestInit = {}): Pr
     headers: {
       ...options.headers,
       Authorization: `Bearer ${getAuthToken() ?? ''}`,
+      ...(getActiveCompanyId() ? { 'X-Company-Id': String(getActiveCompanyId()) } : {}),
     },
   })
 
@@ -137,7 +194,6 @@ async function buscarSessao(): Promise<User> {
 }
 
 interface SwitchCompanyResponse {
-  token: string
   user: User
 }
 
@@ -159,12 +215,12 @@ export function useSession() {
 
   const alternarEmpresaMutation = useMutation({
     mutationFn: alternarEmpresa,
-    onSuccess: async ({ token, user }) => {
-      const tenantKeys = new Set(['users', 'clients', 'leads', 'lead', 'cases', 'dashboard'])
+    onSuccess: async ({ user }) => {
+      const tenantKeys = new Set(['users', 'clients', 'leads', 'lead', 'cases', 'dashboard', 'niss'])
       await queryClient.cancelQueries({
         predicate: (query) => tenantKeys.has(String(query.queryKey[0])),
       })
-      setAuthToken(token)
+      setActiveCompanyId(user.companyId)
       queryClient.setQueryData(['session'], user)
       await queryClient.resetQueries({
         predicate: (query) => tenantKeys.has(String(query.queryKey[0])),
@@ -309,6 +365,51 @@ export function useUsers() {
   }
 }
 
+async function buscarRoles(): Promise<ManagedRole[]> {
+  return authRequest<ManagedRole[]>('/api/roles')
+}
+
+async function buscarRecursos(): Promise<ResourceDefinition[]> {
+  return authRequest<ResourceDefinition[]>('/api/resources')
+}
+
+async function criarRole(dados: RoleInput): Promise<ManagedRole> {
+  return authRequest<ManagedRole>('/api/roles', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados),
+  })
+}
+
+async function atualizarRole({ id, dados }: { id: string; dados: RoleInput }): Promise<ManagedRole> {
+  return authRequest<ManagedRole>(`/api/roles/${id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados),
+  })
+}
+
+async function excluirRole(id: string): Promise<void> {
+  return authRequest<void>(`/api/roles/${id}`, { method: 'DELETE' })
+}
+
+export function useRoles(enabled: MaybeRefOrGetter<boolean> = true) {
+  const queryClient = useQueryClient()
+  const enabledValue = computed(() => toValue(enabled))
+  const rolesQuery = useQuery({ queryKey: ['roles'], queryFn: buscarRoles, enabled: enabledValue })
+  const resourcesQuery = useQuery({ queryKey: ['resources'], queryFn: buscarRecursos, enabled: enabledValue })
+  const createMutation = useMutation({ mutationFn: criarRole, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }) })
+  const updateMutation = useMutation({ mutationFn: atualizarRole, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }) })
+  const deleteMutation = useMutation({ mutationFn: excluirRole, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }) })
+  return {
+    roles: computed(() => rolesQuery.data.value || []),
+    resources: computed(() => resourcesQuery.data.value || []),
+    isLoading: computed(() => rolesQuery.isLoading.value || resourcesQuery.isLoading.value),
+    error: computed(() => rolesQuery.error.value || resourcesQuery.error.value),
+    criarRole: createMutation.mutateAsync,
+    atualizarRole: updateMutation.mutateAsync,
+    excluirRole: deleteMutation.mutateAsync,
+    isSaving: computed(() => createMutation.isPending.value || updateMutation.isPending.value),
+    isDeleting: deleteMutation.isPending,
+  }
+}
+
 async function buscarClientes(): Promise<Client[]> {
   return authRequest<Client[]>('/api/clients')
 }
@@ -365,5 +466,58 @@ export function useClients() {
     isCreating: criarMutation.isPending,
     isUpdating: atualizarMutation.isPending,
     isDeleting: excluirMutation.isPending,
+  }
+}
+
+async function buscarNiss(): Promise<NissProcess[]> {
+  return authRequest<NissProcess[]>('/api/niss')
+}
+
+async function criarNiss(dados: NissInput): Promise<NissProcess> {
+  return authRequest<NissProcess>('/api/niss', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  })
+}
+
+async function buscarDossieNiss(id: string): Promise<Record<string, unknown>> {
+  return authRequest<Record<string, unknown>>(`/api/niss/${id}/dossier`)
+}
+
+async function baixarDocumentosNiss(id: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/api/niss/${id}/documents.zip`, {
+    headers: {
+      Authorization: `Bearer ${getAuthToken() ?? ''}`,
+      ...(getActiveCompanyId() ? { 'X-Company-Id': String(getActiveCompanyId()) } : {}),
+    },
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error ?? 'Não foi possível baixar os documentos.')
+  }
+  return response.blob()
+}
+
+export function useNiss() {
+  const queryClient = useQueryClient()
+  const nissQuery = useQuery({ queryKey: ['niss'], queryFn: buscarNiss })
+  const createMutation = useMutation({
+    mutationFn: criarNiss,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['niss'] }),
+  })
+  const dossierMutation = useMutation({ mutationFn: buscarDossieNiss })
+  const documentsMutation = useMutation({ mutationFn: baixarDocumentosNiss })
+  return {
+    processes: computed(() => nissQuery.data.value || []),
+    isLoading: nissQuery.isLoading,
+    error: nissQuery.error,
+    criarNiss: createMutation.mutateAsync,
+    buscarDossie: dossierMutation.mutateAsync,
+    baixarDocumentos: documentsMutation.mutateAsync,
+    isCreating: createMutation.isPending,
+    isLoadingDossier: dossierMutation.isPending,
+    isDownloadingDocuments: documentsMutation.isPending,
+    refresh: nissQuery.refetch,
   }
 }

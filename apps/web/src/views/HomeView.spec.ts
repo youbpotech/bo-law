@@ -6,6 +6,7 @@ import HomeView from './HomeView.vue'
 const dashboard = vi.hoisted(() => ({
   widgetValues: ['hotLeads'],
   saveWidgets: vi.fn().mockResolvedValue({ widgets: [] }),
+  refresh: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/features/dashboard/useDashboard', async () => {
@@ -36,10 +37,11 @@ vi.mock('@/features/dashboard/useDashboard', async () => {
         recentCases: [],
       }),
       isLoading: ref(false),
+      isRefreshing: ref(false),
       error: ref(null),
       saveWidgets: dashboard.saveWidgets,
       isSaving: ref(false),
-      refresh: vi.fn(),
+      refresh: dashboard.refresh,
     }),
   }
 })
@@ -92,5 +94,16 @@ describe('HomeView configurável', () => {
     await flushPromises()
 
     expect(dashboard.saveWidgets).toHaveBeenCalledWith(['hotLeads', 'totalLeads'])
+  })
+
+  it('informa quando a atualização manual termina com sucesso', async () => {
+    const wrapper = mountView()
+    const refresh = wrapper.findAll('button').find((button) => button.text().includes('Atualizar'))
+
+    await refresh!.trigger('click')
+    await flushPromises()
+
+    expect(dashboard.refresh).toHaveBeenCalledOnce()
+    expect(wrapper.get('[role="status"]').text()).toBe('Dashboard atualizado com sucesso.')
   })
 })

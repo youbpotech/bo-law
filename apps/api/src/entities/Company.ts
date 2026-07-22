@@ -49,6 +49,12 @@ export class Company {
   @Column({ name: 'logomarca_mime_type', type: 'varchar', length: 30, nullable: true })
   logoMimeType!: string | null
 
+  @Column({ name: 'favicon', type: 'bytea', nullable: true, select: false })
+  favicon!: Buffer | null
+
+  @Column({ name: 'favicon_mime_type', type: 'varchar', length: 30, nullable: true })
+  faviconMimeType!: string | null
+
   @Column({ name: 'whatsapp_number', type: 'varchar', length: 40, nullable: true })
   whatsappNumber!: string | null
 

@@ -1,5 +1,5 @@
 import { Request, Response, Router } from 'express'
-import { requireCurrentUser } from '../auth/current-user'
+import { requireResourceUser } from '../auth/current-user'
 import { requireAuth } from '../auth/middleware'
 import { AppDataSource } from '../data-source'
 import { Client } from '../entities/Client'
@@ -207,7 +207,7 @@ async function resolveWebhookCompanyId(to: string): Promise<number | null> {
 }
 
 leadsRouter.get('/leads', requireAuth, async (req, res) => {
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'leads')
   if (!currentUser) return
 
   const page = Math.max(1, Number(req.query.page) || 1)
@@ -242,7 +242,7 @@ leadsRouter.get('/leads', requireAuth, async (req, res) => {
 })
 
 leadsRouter.post('/leads', requireAuth, async (req, res) => {
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'leads')
   if (!currentUser) return
   const parsed = buildLeadInput(req.body as Record<string, unknown>, true)
   if (!parsed.input) return res.status(400).json({ error: parsed.error })
@@ -263,7 +263,7 @@ leadsRouter.post('/leads', requireAuth, async (req, res) => {
 
 leadsRouter.get('/leads/:id', requireAuth, async (req, res) => {
   if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Lead inválido' })
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'leads')
   if (!currentUser) return
   const lead = await getLeadDetail(currentUser.companyId, req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead não encontrado' })
@@ -274,7 +274,7 @@ leadsRouter.get('/leads/:id', requireAuth, async (req, res) => {
 
 leadsRouter.patch('/leads/:id', requireAuth, async (req, res) => {
   if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Lead inválido' })
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'leads')
   if (!currentUser) return
   const existingLead = await getLeadById(currentUser.companyId, req.params.id)
   if (!existingLead) return res.status(404).json({ error: 'Lead não encontrado' })
@@ -331,7 +331,7 @@ leadsRouter.patch('/leads/:id', requireAuth, async (req, res) => {
 
 leadsRouter.post('/leads/:id/assume', requireAuth, async (req, res) => {
   if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Lead inválido' })
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'leads')
   if (!currentUser) return
   const lead = await setLeadConversationStatus(currentUser.companyId, req.params.id, 'human_active')
   if (!lead) return res.status(404).json({ error: 'Lead não encontrado' })
@@ -342,7 +342,7 @@ leadsRouter.post('/leads/:id/send-message', requireAuth, async (req, res) => {
   const content = normalizeText(req.body.content)
   if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Lead inválido' })
   if (!content) return res.status(400).json({ error: 'Informe a mensagem' })
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'leads')
   if (!currentUser) return
   const lead = await getLeadById(currentUser.companyId, req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead não encontrado' })

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { EntityManager } from 'typeorm'
 import { AppDataSource } from '../data-source'
-import { requireCurrentUser } from '../auth/current-user'
+import { requireResourceUser } from '../auth/current-user'
 import { requireAuth } from '../auth/middleware'
 import { Client } from '../entities/Client'
 import { Invoice, InvoiceStatus } from '../entities/Invoice'
@@ -112,7 +112,7 @@ async function createCaseWithPartialInvoice(input: CaseCreationInput) {
 }
 
 casesRouter.get('/cases', requireAuth, async (req, res) => {
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'cases')
   if (!user) return
 
   const stage = CASE_STAGES.includes(req.query.stage as LegalCaseStage)
@@ -138,7 +138,7 @@ casesRouter.get('/cases/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Processo inválido' })
     return
   }
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'cases')
   if (!user) return
   const legalCase = await loadCase(req.params.id, user.companyId)
   if (!legalCase) {
@@ -149,7 +149,7 @@ casesRouter.get('/cases/:id', requireAuth, async (req, res) => {
 })
 
 casesRouter.post('/cases', requireAuth, async (req, res) => {
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'cases')
   if (!user) return
 
   const clientId = normalizeText(req.body.clientId)
@@ -216,7 +216,7 @@ casesRouter.post('/leads/:id/convert', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Lead inválido' })
     return
   }
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'cases')
   if (!user) return
 
   const lead = await AppDataSource.getRepository(Lead).findOne({
@@ -310,7 +310,7 @@ casesRouter.patch('/cases/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Processo inválido' })
     return
   }
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'cases')
   if (!user) return
   const repository = AppDataSource.getRepository(LegalCase)
   const legalCase = await repository.findOneBy({ id: req.params.id, companyId: user.companyId })
@@ -398,7 +398,7 @@ casesRouter.patch('/cases/:caseId/invoices/:invoiceId', requireAuth, async (req,
     res.status(400).json({ error: 'Processo ou faturação inválida' })
     return
   }
-  const user = await requireCurrentUser(req, res)
+  const user = await requireResourceUser(req, res, 'cases')
   if (!user) return
   const legalCase = await loadCase(req.params.caseId, user.companyId)
   if (!legalCase) {

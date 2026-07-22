@@ -3,12 +3,13 @@ import { AppDataSource } from '../data-source'
 import {
   getCurrentUser,
   requireCurrentUser,
+  requireResourceUser,
+  requireRoleRootUser,
   requireRootUser,
   serializeCurrentUser,
 } from '../auth/current-user'
 import { requireAuth } from '../auth/middleware'
-import { hashPassword, verifyPassword } from '../auth/password'
-import { createAuthToken } from '../auth/token'
+import { loginWithKeycloak, RESOURCE_KEYS, type ResourceKey } from '../auth/token'
 import { Client } from '../entities/Client'
 import {
   COMPANY_THEMES,
@@ -21,8 +22,21 @@ import { leadsRouter } from '../leads/routes'
 import { normalizeWhatsappPhone } from '../leads/twilio-service'
 import { casesRouter } from './cases'
 import { dashboardRouter, normalizeDashboardConfig } from './dashboard'
+import { nissRouter } from './niss'
 import { parseCompanyLogo } from '../company-logo'
 import { applyClientProfileInput } from '../client-profile'
+import { parseCompanyFavicon } from '../company-favicon'
+import {
+  createCompanyRole,
+  createKeycloakUser,
+  deleteCompanyRole,
+  deleteKeycloakUser,
+  ensureCompanyRootRole,
+  getUserRoleIds,
+  listCompanyRoles,
+  updateCompanyRole,
+  updateKeycloakUser,
+} from '../keycloak-admin'
 
 const router = Router()
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -59,6 +73,10 @@ function serializeCompany(company: Company) {
     logoUrl: company.logoMimeType
       ? `/api/companies/${company.id}/logo?v=${company.updatedAt.getTime()}`
       : null,
+    hasFavicon: Boolean(company.faviconMimeType),
+    faviconUrl: company.faviconMimeType
+      ? `/api/branding/companies/${company.id}/favicon?v=${company.updatedAt.getTime()}`
+      : null,
     whatsappNumber: company.whatsappNumber,
     dashboardConfig: normalizeDashboardConfig(company.dashboardConfig),
     createdAt: company.createdAt,
@@ -66,7 +84,7 @@ function serializeCompany(company: Company) {
   }
 }
 
-function serializeUser(user: User) {
+function serializeUser(user: User, roleIds: string[] = []) {
   return {
     id: user.id,
     name: user.name,
@@ -74,6 +92,9 @@ function serializeUser(user: User) {
     email: user.email,
     companyId: user.companyId,
     root: user.root,
+    roleRoot: user.roleRoot ?? false,
+    permissions: user.permissions ?? [],
+    roleIds,
     company: user.company ? serializeCompany(user.company) : null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -84,6 +105,100 @@ router.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'bo-law-api' })
 })
 
+router.get('/branding/companies/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Empresa inválida' })
+    return
+  }
+  const company = await AppDataSource.getRepository(Company).findOneBy({ id })
+  if (!company) {
+    res.status(404).json({ error: 'Empresa não encontrada' })
+    return
+  }
+  res.json({
+    id: company.id,
+    name: company.name,
+    theme: company.theme,
+    logoUrl: company.logoMimeType ? `/api/branding/companies/${company.id}/logo` : null,
+    faviconUrl: company.faviconMimeType
+      ? `/api/branding/companies/${company.id}/favicon?v=${company.updatedAt.getTime()}`
+      : null,
+  })
+})
+
+router.get('/branding/favicon', async (req, res) => {
+  const encodedSession = req
+    .header('cookie')
+    ?.split(';')
+    .map((value) => value.trim())
+    .find((value) => value.startsWith('bo-last-session='))
+    ?.slice('bo-last-session='.length)
+  let companyId = 0
+  try {
+    const session = JSON.parse(decodeURIComponent(encodedSession || '')) as { companyId?: unknown }
+    companyId = Number(session.companyId)
+  } catch {
+    // Um cookie ausente ou inválido usa o favicon estático de fallback no frontend.
+  }
+  if (!Number.isInteger(companyId) || companyId <= 0) {
+    res.redirect(302, '/favicon-default.svg')
+    return
+  }
+  const company = await AppDataSource.getRepository(Company)
+    .createQueryBuilder('company')
+    .addSelect('company.favicon')
+    .where('company.id = :companyId', { companyId })
+    .getOne()
+  if (!company?.favicon || !company.faviconMimeType) {
+    res.redirect(302, '/favicon-default.svg')
+    return
+  }
+  res.setHeader('Content-Type', company.faviconMimeType)
+  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate')
+  res.send(company.favicon)
+})
+
+router.get('/branding/companies/:id/logo', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Empresa inválida' })
+    return
+  }
+  const company = await AppDataSource.getRepository(Company)
+    .createQueryBuilder('company')
+    .addSelect('company.logo')
+    .where('company.id = :id', { id })
+    .getOne()
+  if (!company?.logo || !company.logoMimeType) {
+    res.status(404).json({ error: 'Logomarca não encontrada' })
+    return
+  }
+  res.setHeader('Content-Type', company.logoMimeType)
+  res.setHeader('Cache-Control', 'public, max-age=86400')
+  res.send(company.logo)
+})
+
+router.get('/branding/companies/:id/favicon', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Empresa inválida' })
+    return
+  }
+  const company = await AppDataSource.getRepository(Company)
+    .createQueryBuilder('company')
+    .addSelect('company.favicon')
+    .where('company.id = :id', { id })
+    .getOne()
+  if (!company?.favicon || !company.faviconMimeType) {
+    res.status(404).json({ error: 'Favicon não encontrado' })
+    return
+  }
+  res.setHeader('Content-Type', company.faviconMimeType)
+  res.setHeader('Cache-Control', 'public, max-age=86400')
+  res.send(company.favicon)
+})
+
 router.post('/auth/login', async (req, res) => {
   const username = normalizeText(req.body.username).toLowerCase()
   const password = typeof req.body.password === 'string' ? req.body.password : ''
@@ -92,19 +207,12 @@ router.post('/auth/login', async (req, res) => {
     return
   }
 
-  const user = await AppDataSource.getRepository(User)
-    .createQueryBuilder('user')
-    .leftJoinAndSelect('user.company', 'company')
-    .addSelect('user.password')
-    .where('LOWER(user.username) = LOWER(:username)', { username })
-    .getOne()
-
-  if (!user || !(await verifyPassword(password, user.password))) {
+  const keycloakSession = await loginWithKeycloak(username, password)
+  if (!keycloakSession) {
     res.status(401).json({ error: 'Usuário ou senha inválidos' })
     return
   }
-
-  res.json({ token: createAuthToken(user), user: serializeUser(user) })
+  res.json({ token: keycloakSession.access_token, expiresIn: keycloakSession.expires_in })
 })
 
 router.get('/me', requireAuth, async (req, res) => {
@@ -132,7 +240,6 @@ router.put('/me/company', requireAuth, async (req, res) => {
   user.companyId = company.id
   user.company = company
   res.json({
-    token: createAuthToken(user, company.id),
     user: serializeCurrentUser(user),
   })
 })
@@ -195,8 +302,10 @@ router.post('/companies', requireAuth, async (req, res) => {
     return
   }
   let logo
+  let favicon
   try {
     logo = parseCompanyLogo(req.body.logoDataUrl)
+    favicon = parseCompanyFavicon(req.body.faviconDataUrl)
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : 'Logomarca inválida' })
     return
@@ -206,13 +315,22 @@ router.post('/companies', requireAuth, async (req, res) => {
     theme: normalizeTheme(req.body.theme),
     logo: logo?.data ?? null,
     logoMimeType: logo?.mimeType ?? null,
+    favicon: favicon?.data ?? null,
+    faviconMimeType: favicon?.mimeType ?? null,
     whatsappNumber: normalizeWhatsappNumber(req.body.whatsappNumber),
     dashboardConfig: req.body.dashboardConfig
       ? normalizeDashboardConfig(req.body.dashboardConfig)
       : { widgets: [...DEFAULT_DASHBOARD_WIDGETS] },
   })
   try {
-    res.status(201).json(serializeCompany(await AppDataSource.getRepository(Company).save(company)))
+    const saved = await AppDataSource.getRepository(Company).save(company)
+    try {
+      await ensureCompanyRootRole(saved.id)
+    } catch (error) {
+      await AppDataSource.getRepository(Company).remove(saved)
+      throw error
+    }
+    res.status(201).json(serializeCompany(saved))
   } catch (error) {
     if (isDatabaseError(error, '23505')) {
       res.status(409).json({ error: 'Este número de WhatsApp já está associado a outra empresa' })
@@ -244,6 +362,11 @@ router.put('/companies/:id', requireAuth, async (req, res) => {
     if (logo !== undefined) {
       company.logo = logo?.data ?? null
       company.logoMimeType = logo?.mimeType ?? null
+    }
+    const favicon = parseCompanyFavicon(req.body.faviconDataUrl)
+    if (favicon !== undefined) {
+      company.favicon = favicon?.data ?? null
+      company.faviconMimeType = favicon?.mimeType ?? null
     }
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : 'Logomarca inválida' })
@@ -297,23 +420,35 @@ router.delete('/companies/:id', requireAuth, async (req, res) => {
 })
 
 router.get('/users', requireAuth, async (req, res) => {
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'users')
   if (!currentUser) return
   const users = await AppDataSource.getRepository(User).find({
     where: { companyId: currentUser.companyId },
     relations: ['company'],
     order: { name: 'ASC' },
   })
-  res.json(users.map(serializeUser))
+  res.json(
+    await Promise.all(
+      users.map(async (user) =>
+        serializeUser(
+          user,
+          user.keycloakId ? await getUserRoleIds(user.keycloakId, currentUser.companyId) : [],
+        ),
+      ),
+    ),
+  )
 })
 
 router.post('/users', requireAuth, async (req, res) => {
-  const currentUser = await requireRootUser(req, res)
+  const currentUser = await requireRoleRootUser(req, res)
   if (!currentUser) return
   const name = normalizeText(req.body.name)
   const username = normalizeText(req.body.username).toLowerCase()
   const email = normalizeNullableText(req.body.email)
   const password = typeof req.body.password === 'string' ? req.body.password : ''
+  const roleIds = Array.isArray(req.body.roleIds)
+    ? req.body.roleIds.filter((id: unknown): id is string => typeof id === 'string')
+    : []
   if (!name || !username || password.length < 8) {
     res
       .status(400)
@@ -321,22 +456,33 @@ router.post('/users', requireAuth, async (req, res) => {
     return
   }
   const repository = AppDataSource.getRepository(User)
-  const user = repository.create({
-    name,
-    username,
-    email,
-    password: await hashPassword(password),
-    companyId: currentUser.companyId,
-    root: false,
-  })
+  let keycloakId: string | null = null
   try {
+    keycloakId = await createKeycloakUser({
+      companyId: currentUser.companyId,
+      name,
+      username,
+      email,
+      password,
+      roleIds,
+    })
+    const user = repository.create({
+      name,
+      username,
+      email,
+      password: null,
+      keycloakId,
+      companyId: currentUser.companyId,
+      root: false,
+    })
     const saved = await repository.save(user)
     const complete = await repository.findOneOrFail({
       where: { id: saved.id },
       relations: ['company'],
     })
-    res.status(201).json(serializeUser(complete))
+    res.status(201).json(serializeUser(complete, roleIds))
   } catch (error) {
+    if (keycloakId) await deleteKeycloakUser(keycloakId).catch(() => undefined)
     if (isDatabaseError(error, '23505')) {
       res.status(409).json({ error: 'Usuário ou e-mail já cadastrado' })
       return
@@ -350,7 +496,7 @@ router.get('/users/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Usuário inválido' })
     return
   }
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'users')
   if (!currentUser) return
   const user = await AppDataSource.getRepository(User).findOne({
     where: { id: req.params.id, companyId: currentUser.companyId },
@@ -368,7 +514,7 @@ router.put('/users/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Usuário inválido' })
     return
   }
-  const currentUser = await requireRootUser(req, res)
+  const currentUser = await requireRoleRootUser(req, res)
   if (!currentUser) return
   const repository = AppDataSource.getRepository(User)
   const user = await repository.findOne({
@@ -382,6 +528,9 @@ router.put('/users/:id', requireAuth, async (req, res) => {
   const name = normalizeText(req.body.name)
   const username = normalizeText(req.body.username).toLowerCase()
   const password = typeof req.body.password === 'string' ? req.body.password : ''
+  const roleIds = Array.isArray(req.body.roleIds)
+    ? req.body.roleIds.filter((id: unknown): id is string => typeof id === 'string')
+    : []
   if (!name || !username || (password && password.length < 8)) {
     res
       .status(400)
@@ -390,12 +539,23 @@ router.put('/users/:id', requireAuth, async (req, res) => {
       })
     return
   }
+  if (!user.keycloakId) {
+    res.status(409).json({ error: 'Usuário ainda não está sincronizado com o Keycloak' })
+    return
+  }
+  await updateKeycloakUser(user.keycloakId, {
+    companyId: currentUser.companyId,
+    name,
+    username,
+    email: normalizeNullableText(req.body.email),
+    password: password || undefined,
+    roleIds,
+  })
   user.name = name
   user.username = username
   user.email = normalizeNullableText(req.body.email)
-  if (password) user.password = await hashPassword(password)
   try {
-    res.json(serializeUser(await repository.save(user)))
+    res.json(serializeUser(await repository.save(user), roleIds))
   } catch (error) {
     if (isDatabaseError(error, '23505')) {
       res.status(409).json({ error: 'Usuário ou e-mail já cadastrado' })
@@ -410,7 +570,7 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Usuário inválido' })
     return
   }
-  const currentUser = await requireRootUser(req, res)
+  const currentUser = await requireRoleRootUser(req, res)
   if (!currentUser) return
   if (currentUser.id === req.params.id) {
     res.status(400).json({ error: 'Você não pode excluir o próprio usuário' })
@@ -425,16 +585,71 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
     res.status(404).json({ error: 'Usuário não encontrado' })
     return
   }
-  if (target.root) {
-    res.status(400).json({ error: 'Usuários root não podem ser excluídos' })
-    return
-  }
+  if (target.keycloakId) await deleteKeycloakUser(target.keycloakId)
   await repository.delete(target.id)
   res.status(204).send()
 })
 
+router.get('/resources', requireAuth, async (req, res) => {
+  const currentUser = await requireRoleRootUser(req, res)
+  if (!currentUser) return
+  const names: Record<ResourceKey, string> = {
+    dashboard: 'Dashboard', users: 'Usuários', roles: 'Roles', clients: 'Clientes',
+    companies: 'Empresas', leads: 'Leads', cases: 'Processos', niss: 'NISS',
+  }
+  res.json(RESOURCE_KEYS.map((key) => ({ key, name: names[key], kind: ['leads', 'cases', 'niss'].includes(key) ? 'process' : 'resource' })))
+})
+
+router.get('/roles', requireAuth, async (req, res) => {
+  const currentUser = await requireRoleRootUser(req, res)
+  if (!currentUser) return
+  res.json(await listCompanyRoles(currentUser.companyId))
+})
+
+router.post('/roles', requireAuth, async (req, res) => {
+  const currentUser = await requireRoleRootUser(req, res)
+  if (!currentUser) return
+  const name = normalizeText(req.body.name)
+  const resources = Array.isArray(req.body.resources)
+    ? req.body.resources.filter((key: unknown): key is ResourceKey => typeof key === 'string' && RESOURCE_KEYS.includes(key as ResourceKey))
+    : []
+  if (!name || name.length > 100) {
+    res.status(400).json({ error: 'Nome da role é obrigatório e deve ter até 100 caracteres' })
+    return
+  }
+  res.status(201).json(await createCompanyRole(currentUser.companyId, { name, description: normalizeNullableText(req.body.description), resources }))
+})
+
+router.put('/roles/:id', requireAuth, async (req, res) => {
+  if (!UUID_PATTERN.test(req.params.id)) { res.status(400).json({ error: 'Role inválida' }); return }
+  const currentUser = await requireRoleRootUser(req, res)
+  if (!currentUser) return
+  const name = normalizeText(req.body.name)
+  const resources = Array.isArray(req.body.resources)
+    ? req.body.resources.filter((key: unknown): key is ResourceKey => typeof key === 'string' && RESOURCE_KEYS.includes(key as ResourceKey))
+    : []
+  if (!name || name.length > 100) { res.status(400).json({ error: 'Nome da role inválido' }); return }
+  try {
+    res.json(await updateCompanyRole(currentUser.companyId, req.params.id, { name, description: normalizeNullableText(req.body.description), resources }))
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Não foi possível alterar a role' })
+  }
+})
+
+router.delete('/roles/:id', requireAuth, async (req, res) => {
+  if (!UUID_PATTERN.test(req.params.id)) { res.status(400).json({ error: 'Role inválida' }); return }
+  const currentUser = await requireRoleRootUser(req, res)
+  if (!currentUser) return
+  try {
+    await deleteCompanyRole(currentUser.companyId, req.params.id)
+    res.status(204).send()
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Não foi possível excluir a role' })
+  }
+})
+
 router.get('/clients', requireAuth, async (req, res) => {
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'clients')
   if (!currentUser) return
   res.json(
     await AppDataSource.getRepository(Client).find({
@@ -449,7 +664,7 @@ router.get('/clients/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Cliente inválido' })
     return
   }
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'clients')
   if (!currentUser) return
   const client = await AppDataSource.getRepository(Client).findOneBy({
     id: req.params.id,
@@ -463,7 +678,7 @@ router.get('/clients/:id', requireAuth, async (req, res) => {
 })
 
 router.post('/clients', requireAuth, async (req, res) => {
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'clients')
   if (!currentUser) return
   const name = normalizeText(req.body.name)
   if (!name) {
@@ -493,7 +708,7 @@ router.put('/clients/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Cliente inválido' })
     return
   }
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'clients')
   if (!currentUser) return
   const repository = AppDataSource.getRepository(Client)
   const client = await repository.findOneBy({ id: req.params.id, companyId: currentUser.companyId })
@@ -525,7 +740,7 @@ router.delete('/clients/:id', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Cliente inválido' })
     return
   }
-  const currentUser = await requireCurrentUser(req, res)
+  const currentUser = await requireResourceUser(req, res, 'clients')
   if (!currentUser) return
   try {
     const result = await AppDataSource.getRepository(Client).delete({
@@ -549,5 +764,6 @@ router.delete('/clients/:id', requireAuth, async (req, res) => {
 router.use(leadsRouter)
 router.use(casesRouter)
 router.use(dashboardRouter)
+router.use(nissRouter)
 
 export default router

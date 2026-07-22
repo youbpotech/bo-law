@@ -163,6 +163,7 @@ import {
   ChartNoAxesColumn,
   DollarSign,
   Scale,
+  ShieldCheck,
 } from 'lucide-vue-next'
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
@@ -177,8 +178,11 @@ import DropdownMenu from '@/components/ui/DropdownMenu.vue'
 import DropdownMenuItem from '@/components/ui/DropdownMenuItem.vue'
 import { clearAuthToken } from '@/lib/auth'
 import { queryClient } from '@/lib/query-client'
-import { useCompanies, useSession } from '@/composables/useApi'
+import { useCompanies, useSession, type ResourceKey } from '@/composables/useApi'
 import { useTheme } from '@/composables/useTheme'
+import { rememberLastSession } from '@/lib/last-session'
+import { setBrowserFavicon } from '@/lib/favicon'
+import SocialSecurityIcon from '@/components/icons/SocialSecurityIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -252,22 +256,40 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => currentUser.value?.company?.faviconUrl,
+  (faviconUrl) => setBrowserFavicon(faviconUrl),
+  { immediate: true },
+)
+
+watch(
+  () => [currentUser.value?.username, currentUser.value?.companyId] as const,
+  ([username, companyId]) => {
+    if (username && companyId) rememberLastSession({ username, companyId })
+  },
+  { immediate: true },
+)
+
+const hasPermission = (key: ResourceKey) => Boolean(currentUser.value?.root || currentUser.value?.permissions?.includes(key))
+
 const navigationItems = computed(() => [
-  { name: t('navigation.dashboard'), href: '/', icon: ChartNoAxesColumn },
+  ...(hasPermission('dashboard') ? [{ name: t('navigation.dashboard'), href: '/', icon: ChartNoAxesColumn }] : []),
   {
     name: t('navigation.registrations'),
     icon: UserCheck,
     children: [
-      { name: t('navigation.users'), href: '/users', icon: Users },
-      { name: t('navigation.clients'), href: '/clients', icon: UsersRound },
-      ...(currentUser.value?.root
+      ...(hasPermission('users') ? [{ name: t('navigation.users'), href: '/users', icon: Users }] : []),
+      ...(currentUser.value?.roleRoot && hasPermission('roles') ? [{ name: 'Roles', href: '/roles', icon: ShieldCheck }] : []),
+      ...(hasPermission('clients') ? [{ name: t('navigation.clients'), href: '/clients', icon: UsersRound }] : []),
+      ...(currentUser.value?.root && hasPermission('companies')
         ? [{ name: t('navigation.companies'), href: '/companies', icon: Building2 }]
         : []),
     ],
   },
-  { name: t('navigation.leads'), href: '/leads', icon: DollarSign },
-  { name: t('navigation.cases'), href: '/cases', icon: Scale },
-])
+  ...(hasPermission('leads') ? [{ name: t('navigation.leads'), href: '/leads', icon: DollarSign }] : []),
+  ...(hasPermission('cases') ? [{ name: t('navigation.cases'), href: '/cases', icon: Scale }] : []),
+  ...(hasPermission('niss') ? [{ name: t('navigation.niss'), href: '/niss', icon: SocialSecurityIcon }] : []),
+].filter((item) => !item.children || item.children.length > 0))
 
 // Toggle submenu
 const toggleSubmenu = (menuName: string) => {

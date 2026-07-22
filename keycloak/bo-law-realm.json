@@ -1,0 +1,57 @@
+{
+  "realm": "bo-law",
+  "enabled": true,
+  "displayName": "Backoffice Jurídico",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "clients": [
+    {
+      "clientId": "bo-law-api",
+      "name": "Backoffice Jurídico API",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "defaultClientScopes": ["profile", "email", "roles"],
+      "protocolMappers": [
+        {
+          "name": "company_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "companyId",
+            "claim.name": "companyId",
+            "jsonType.label": "long",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [{ "name": "platform-root", "description": "Administrador global da plataforma" }],
+    "client": {
+      "bo-law-api": [
+        { "name": "dashboard", "description": "Acesso ao Dashboard" },
+        { "name": "users", "description": "Gestão de usuários" },
+        { "name": "roles", "description": "Gestão de roles" },
+        { "name": "clients", "description": "Gestão de clientes" },
+        { "name": "companies", "description": "Gestão de empresas" },
+        { "name": "leads", "description": "Processo de Leads" },
+        { "name": "cases", "description": "Processo jurídico" },
+        { "name": "niss", "description": "Processo NISS" }
+      ]
+    }
+  },
+  "accessTokenLifespan": 28800,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 28800
+}

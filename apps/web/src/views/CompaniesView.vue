@@ -39,8 +39,11 @@ const form = reactive({
   theme: 'default',
   whatsappNumber: '',
   logoDataUrl: undefined as string | null | undefined,
+  faviconDataUrl: undefined as string | null | undefined,
 })
 const logoPreview = ref<string | null>(null)
+const faviconPreview = ref<string | null>(null)
+const faviconError = ref('')
 const pendingLogoDataUrl = ref<string | null>(null)
 const pendingLogoDimensions = ref<{ width: number; height: number } | null>(null)
 const pendingLogoError = ref('')
@@ -61,6 +64,9 @@ const LOGO_SOURCE_MIN_HEIGHT = 40
 const LOGO_SOURCE_MAX_DIMENSION = 16000
 const LOGO_OUTPUT_WIDTH = 1024
 const LOGO_OUTPUT_HEIGHT = 256
+const FAVICON_MAX_BYTES = 256 * 1024
+const FAVICON_MIN_SIZE = 32
+const FAVICON_MAX_SIZE = 512
 
 const filteredCompanies = computed(() => {
   const term = search.value.trim().toLowerCase()
@@ -83,7 +89,10 @@ function resetForm(): void {
   form.theme = 'default'
   form.whatsappNumber = ''
   form.logoDataUrl = undefined
+  form.faviconDataUrl = undefined
   logoPreview.value = null
+  faviconPreview.value = null
+  faviconError.value = ''
   formError.value = ''
 }
 
@@ -99,7 +108,10 @@ function openEditDialog(company: Company): void {
   form.theme = company.theme || 'default'
   form.whatsappNumber = company.whatsappNumber ?? ''
   form.logoDataUrl = undefined
+  form.faviconDataUrl = undefined
   logoPreview.value = company.logoUrl
+  faviconPreview.value = company.faviconUrl
+  faviconError.value = ''
   formError.value = ''
   isDialogOpen.value = true
 }
@@ -314,6 +326,39 @@ function removeLogo(): void {
   logoPreview.value = null
 }
 
+async function handleFaviconUpload(event: Event): Promise<void> {
+  faviconError.value = ''
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      throw new Error(t('companies.faviconFormatError'))
+    }
+    if (file.size > FAVICON_MAX_BYTES) throw new Error(t('companies.faviconSizeError'))
+    const dataUrl = await readFileAsDataUrl(file)
+    const image = await loadImage(dataUrl)
+    if (
+      image.naturalWidth !== image.naturalHeight ||
+      image.naturalWidth < FAVICON_MIN_SIZE ||
+      image.naturalWidth > FAVICON_MAX_SIZE
+    ) {
+      throw new Error(t('companies.faviconDimensionsError'))
+    }
+    form.faviconDataUrl = dataUrl
+    faviconPreview.value = dataUrl
+  } catch (error) {
+    input.value = ''
+    faviconError.value = error instanceof Error ? error.message : t('companies.faviconInvalid')
+  }
+}
+
+function removeFavicon(): void {
+  form.faviconDataUrl = null
+  faviconPreview.value = null
+  faviconError.value = ''
+}
+
 async function saveCompany(): Promise<void> {
   formError.value = ''
 
@@ -323,6 +368,7 @@ async function saveCompany(): Promise<void> {
       theme: form.theme,
       whatsappNumber: form.whatsappNumber.trim() || null,
       ...(form.logoDataUrl !== undefined ? { logoDataUrl: form.logoDataUrl } : {}),
+      ...(form.faviconDataUrl !== undefined ? { faviconDataUrl: form.faviconDataUrl } : {}),
     }
 
     if (editingCompany.value) {
@@ -495,6 +541,25 @@ function formatDate(value: string): string {
             {{ $t('companies.removeLogo') }}
           </Button>
         </div>
+      </div>
+
+      <div class="space-y-2">
+        <span class="text-sm font-medium">{{ $t('companies.favicon') }}</span>
+        <div v-if="faviconPreview" class="flex h-16 w-16 items-center justify-center rounded-md border bg-background p-2">
+          <img :src="faviconPreview" :alt="$t('companies.faviconPreview')" class="h-full w-full object-contain" />
+        </div>
+        <input
+          id="company-favicon-file"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-secondary-foreground"
+          @change="handleFaviconUpload"
+        />
+        <p class="text-xs text-muted-foreground">{{ $t('companies.faviconHelp') }}</p>
+        <p v-if="faviconError" class="text-sm text-destructive">{{ faviconError }}</p>
+        <Button v-if="faviconPreview" type="button" variant="outline" size="sm" @click="removeFavicon">
+          {{ $t('companies.removeFavicon') }}
+        </Button>
       </div>
 
       <p v-if="formError" class="text-sm text-destructive">{{ formError }}</p>
