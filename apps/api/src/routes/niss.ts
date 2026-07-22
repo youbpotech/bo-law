@@ -82,6 +82,41 @@ nissRouter.get('/niss/:id/dossier', requireAuth, async (req, res) => {
   }
 })
 
+nissRouter.get('/niss/:id/documents', requireAuth, async (req, res) => {
+  const user = await requireResourceUser(req, res, 'niss')
+  if (!user) return
+  try {
+    const authorized = await authorizedProcess(req.params.id, user.companyId)
+    if (!authorized) return void res.status(404).json({ error: 'Pedido NISS não encontrado.' })
+    const documents = await getNissDocuments(req.params.id)
+    res.json(documents.map(({ id, fileName, mimeType }) => ({ id, fileName, mimeType })))
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao consultar os documentos.' })
+  }
+})
+
+nissRouter.get('/niss/:id/documents/:docIndex', requireAuth, async (req, res) => {
+  const user = await requireResourceUser(req, res, 'niss')
+  if (!user) return
+  try {
+    const authorized = await authorizedProcess(req.params.id, user.companyId)
+    if (!authorized) return void res.status(404).json({ error: 'Pedido NISS não encontrado.' })
+    const docIndex = parseInt(req.params.docIndex, 10)
+    if (isNaN(docIndex) || docIndex < 0) return void res.status(400).json({ error: 'Índice do documento inválido.' })
+    const documents = await getNissDocuments(req.params.id)
+    const document = documents[docIndex]
+    if (!document || !document.accessUrl) return void res.status(404).json({ error: 'Documento não encontrado.' })
+    const data = await downloadNissDocument(document.accessUrl)
+    const sanitizedFileName = document.fileName.replace(/[^a-zA-Z0-9._ -]/g, '_')
+    res.setHeader('Content-Type', document.mimeType || 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"`)
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(data)
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao transferir o documento.' })
+  }
+})
+
 nissRouter.get('/niss/:id/documents.zip', requireAuth, async (req, res) => {
   const user = await requireResourceUser(req, res, 'niss')
   if (!user) return

@@ -133,6 +133,12 @@ export interface NissInput {
   birthDate: string
 }
 
+export interface NissDocument {
+  id: string
+  fileName: string
+  mimeType: string | null
+}
+
 export interface ManagedRole {
   id: string
   name: string
@@ -485,6 +491,24 @@ async function buscarDossieNiss(id: string): Promise<Record<string, unknown>> {
   return authRequest<Record<string, unknown>>(`/api/niss/${id}/dossier`)
 }
 
+async function buscarDocumentosNiss(id: string): Promise<NissDocument[]> {
+  return authRequest<NissDocument[]>(`/api/niss/${id}/documents`)
+}
+
+async function baixarDocumentoNiss({ processId, docIndex }: { processId: string; docIndex: number }): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/api/niss/${processId}/documents/${docIndex}`, {
+    headers: {
+      Authorization: `Bearer ${getAuthToken() ?? ''}`,
+      ...(getActiveCompanyId() ? { 'X-Company-Id': String(getActiveCompanyId()) } : {}),
+    },
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error ?? 'Não foi possível baixar o documento.')
+  }
+  return response.blob()
+}
+
 async function baixarDocumentosNiss(id: string): Promise<Blob> {
   const response = await fetch(`${API_BASE_URL}/api/niss/${id}/documents.zip`, {
     headers: {
@@ -508,6 +532,8 @@ export function useNiss() {
   })
   const dossierMutation = useMutation({ mutationFn: buscarDossieNiss })
   const documentsMutation = useMutation({ mutationFn: baixarDocumentosNiss })
+  const documentListMutation = useMutation({ mutationFn: buscarDocumentosNiss })
+  const singleDocMutation = useMutation({ mutationFn: baixarDocumentoNiss })
   return {
     processes: computed(() => nissQuery.data.value || []),
     isLoading: nissQuery.isLoading,
@@ -515,9 +541,13 @@ export function useNiss() {
     criarNiss: createMutation.mutateAsync,
     buscarDossie: dossierMutation.mutateAsync,
     baixarDocumentos: documentsMutation.mutateAsync,
+    buscarDocumentos: documentListMutation.mutateAsync,
+    baixarDocumento: singleDocMutation.mutateAsync,
     isCreating: createMutation.isPending,
     isLoadingDossier: dossierMutation.isPending,
     isDownloadingDocuments: documentsMutation.isPending,
+    isLoadingDocuments: documentListMutation.isPending,
+    isDownloadingDocument: singleDocMutation.isPending,
     refresh: nissQuery.refetch,
   }
 }

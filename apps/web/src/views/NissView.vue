@@ -7,8 +7,8 @@ import {
   ChevronDown,
   CircleX,
   Clock3,
-  Download,
   FileSearch,
+  FolderOpen,
   LoaderCircle,
   Plus,
   RefreshCw,
@@ -24,14 +24,17 @@ import TableCell from '@/components/ui/TableCell.vue'
 import TableHead from '@/components/ui/TableHead.vue'
 import TableHeader from '@/components/ui/TableHeader.vue'
 import TableRow from '@/components/ui/TableRow.vue'
-import { useClients, useNiss, type Client, type NissInput } from '@/composables/useApi'
+import NissDossierModal from '@/components/NissDossierModal.vue'
+import NissDocumentsModal from '@/components/NissDocumentsModal.vue'
+import { useClients, useNiss, useSession, type Client, type NissInput, type NissDocument } from '@/composables/useApi'
 
 const route = useRoute()
 const router = useRouter()
 const { clients, isLoading: clientsLoading } = useClients()
+const { currentUser } = useSession()
 const {
-  processes, isLoading, error, criarNiss, buscarDossie, baixarDocumentos,
-  isCreating, isLoadingDossier, isDownloadingDocuments, refresh,
+  processes, isLoading, error, criarNiss, buscarDossie, buscarDocumentos, baixarDocumento,
+  isCreating, isLoadingDossier, isLoadingDocuments, refresh,
 } = useNiss()
 const search = ref('')
 const isDialogOpen = ref(false)
@@ -41,7 +44,13 @@ const isClientMenuOpen = ref(false)
 const isDossierOpen = ref(false)
 const dossier = ref<Record<string, unknown> | null>(null)
 const dossierProcessId = ref('')
+const dossierError = ref('')
+const isDocumentsOpen = ref(false)
+const documents = ref<NissDocument[]>([])
+const documentsProcessId = ref('')
+const documentsError = ref('')
 const actionError = ref('')
+const dossierModalRef = ref<InstanceType<typeof NissDossierModal> | null>(null)
 const form = reactive<NissInput>({ clientId: '', requestNumber: '', email: '', birthDate: '' })
 
 const selectedClient = computed(() => clients.value.find((client) => client.id === form.clientId))
@@ -141,29 +150,38 @@ function statusIcon(status: number) {
 }
 
 async function openDossier(id: string): Promise<void> {
-  actionError.value = ''
+  dossierError.value = ''
   dossier.value = null
   dossierProcessId.value = id
   isDossierOpen.value = true
   try {
     dossier.value = await buscarDossie(id)
   } catch (caughtError) {
-    actionError.value = caughtError instanceof Error ? caughtError.message : 'Não foi possível consultar o dossiê.'
+    dossierError.value = caughtError instanceof Error ? caughtError.message : 'Não foi possível consultar o dossiê.'
   }
 }
 
-async function downloadDocuments(id: string): Promise<void> {
-  actionError.value = ''
+async function openDocuments(id: string): Promise<void> {
+  documentsError.value = ''
+  documents.value = []
+  documentsProcessId.value = id
+  isDocumentsOpen.value = true
   try {
-    const blob = await baixarDocumentos(id)
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `pedido-niss-${id}.zip`
-    anchor.click()
-    URL.revokeObjectURL(url)
+    documents.value = await buscarDocumentos(id)
   } catch (caughtError) {
-    actionError.value = caughtError instanceof Error ? caughtError.message : 'Não foi possível baixar os documentos.'
+    documentsError.value = caughtError instanceof Error ? caughtError.message : 'Não foi possível listar os documentos.'
+  }
+}
+
+function getDossierPdfGenerator(): (() => Promise<Blob>) | null {
+  if (!dossierModalRef.value) return null
+  return async () => {
+    // If dossier hasn't been loaded yet for the current documents process, load it
+    if (!dossier.value || dossierProcessId.value !== documentsProcessId.value) {
+      dossier.value = await buscarDossie(documentsProcessId.value)
+      dossierProcessId.value = documentsProcessId.value
+    }
+    return dossierModalRef.value!.generatePdf()
   }
 }
 
@@ -218,7 +236,7 @@ watch(
             <TableCell>{{ process.niss || '-' }}<BadgeCheck v-if="process.nissCommunicated" class="ml-1 inline h-4 w-4 text-green-600" /></TableCell>
             <TableCell>{{ process.attempts }}<p v-if="process.denialReason" class="max-w-xs text-xs text-destructive">{{ process.denialReason }}</p></TableCell>
             <TableCell>{{ date(process.updatedAt, true) }}</TableCell>
-            <TableCell><div class="flex justify-end gap-2"><Button size="sm" variant="outline" :disabled="isLoadingDossier" @click="openDossier(process.id)"><FileSearch class="mr-2 h-4 w-4" />Dossiê</Button><Button size="sm" variant="outline" :disabled="isDownloadingDocuments" title="Baixar documentos em ZIP" aria-label="Baixar documentos em ZIP" @click="downloadDocuments(process.id)"><Download class="h-4 w-4" /></Button></div></TableCell>
+            <TableCell><div class="flex justify-end gap-2"><Button size="sm" variant="outline" :disabled="isLoadingDossier" @click="openDossier(process.id)"><FileSearch class="mr-2 h-4 w-4" />Dossiê</Button><Button size="sm" variant="outline" :disabled="isLoadingDocuments" @click="openDocuments(process.id)"><FolderOpen class="mr-2 h-4 w-4" />Documentos</Button></div></TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -286,13 +304,26 @@ watch(
     </form>
   </Dialog>
 
-  <Dialog :open="isDossierOpen" class="max-h-[92vh] max-w-5xl overflow-y-auto" @update:open="(open) => !open && (isDossierOpen = false)">
-    <div class="space-y-4">
-      <div><h2 class="text-xl font-semibold">Dossiê do pedido {{ dossierProcessId }}</h2><p class="text-sm text-muted-foreground">Todas as informações retornadas pelo BotNiss para este pedido.</p></div>
-      <p v-if="isLoadingDossier" class="py-8 text-center text-muted-foreground">Carregando dossiê...</p>
-      <p v-else-if="actionError" class="rounded-md bg-destructive/5 p-3 text-sm text-destructive">{{ actionError }}</p>
-      <pre v-else-if="dossier" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-4 text-xs">{{ JSON.stringify(dossier, null, 2) }}</pre>
-      <div class="flex justify-end border-t pt-4"><Button variant="outline" @click="isDossierOpen = false">Fechar</Button></div>
-    </div>
-  </Dialog>
+  <NissDossierModal
+    ref="dossierModalRef"
+    :open="isDossierOpen"
+    :process-id="dossierProcessId"
+    :dossier="dossier"
+    :is-loading="isLoadingDossier"
+    :error="dossierError"
+    :logo-url="currentUser?.company?.logoUrl ?? null"
+    :company-name="currentUser?.company?.name ?? ''"
+    @update:open="(v) => !v && (isDossierOpen = false)"
+  />
+
+  <NissDocumentsModal
+    :open="isDocumentsOpen"
+    :process-id="documentsProcessId"
+    :documents="documents"
+    :is-loading="isLoadingDocuments"
+    :error="documentsError"
+    :baixar-documento="baixarDocumento"
+    :generate-dossier-pdf="getDossierPdfGenerator()"
+    @update:open="(v) => !v && (isDocumentsOpen = false)"
+  />
 </template>
