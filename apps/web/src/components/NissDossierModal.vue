@@ -5,7 +5,7 @@ import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
-import { buildDossierSections } from '@/lib/niss-dossier'
+import { buildDossierSections, buildDossierTitle } from '@/lib/niss-dossier'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -43,6 +43,11 @@ function formatValue(value: unknown): string {
 const sections = computed(() => {
   if (!props.dossier) return []
   return buildDossierSections(props.dossier as Record<string, unknown>)
+})
+
+const dossierTitle = computed(() => {
+  if (!props.dossier) return `Pedido ${props.processId}`
+  return buildDossierTitle(props.dossier as Record<string, unknown>)
 })
 
 async function loadLogoAsDataUrl(): Promise<string | null> {
@@ -171,7 +176,7 @@ defineExpose({ generatePdf: exportPdf })
     <div class="space-y-4">
       <div class="flex items-start justify-between">
         <div>
-          <h2 class="text-xl font-semibold">Dossiê do pedido {{ processId }}</h2>
+          <h2 class="text-xl font-semibold">{{ dossierTitle }}</h2>
           <p class="text-sm text-muted-foreground">Todas as informações retornadas pelo BotNiss para este pedido.</p>
         </div>
         <Button
@@ -194,7 +199,7 @@ defineExpose({ generatePdf: exportPdf })
           <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <p class="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Dossiê NISS</p>
-              <h3 class="mt-1 text-2xl font-semibold text-foreground">Pedido {{ processId }}</h3>
+              <h3 class="mt-1 text-2xl font-semibold text-foreground">{{ dossierTitle }}</h3>
               <p class="mt-2 max-w-3xl text-sm text-muted-foreground">
                 Documento preparado para acompanhamento do advogado e do cliente, com foco nas informações relevantes para a análise do processo.
               </p>

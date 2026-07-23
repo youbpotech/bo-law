@@ -13,11 +13,37 @@ describe('cliente da API BotNiss', () => {
       id_solicitacao: '12', id_referencia_origem: 'cliente-1', id_pedido_niss: '106002',
       email: 'cliente@example.com', data_nascimento: '1990-12-31T00:00:00.000Z',
       status_operacional: 3, status_operacional_nome: 'CONCLUIDO', quantidade_tentativas: 2,
-      niss_ee: '12345678901', niss_comunicado: true, criado_em: '2026-07-22T10:00:00Z',
+      niss_ee: '12345678901', niss_comunicado: '12345678901', criado_em: '2026-07-22T10:00:00Z',
       atualizado_em: '2026-07-22T11:00:00Z',
     })).toMatchObject({
       id: '12', clientId: 'cliente-1', requestNumber: '106002', birthDate: '1990-12-31',
       operationalStatusName: 'CONCLUIDO', attempts: 2, niss: '12345678901',
+    })
+  })
+
+  it('usa apenas o valor de niss_comunicado como NISS atribuído ao cidadão', () => {
+    expect(mapNissProcess({
+      id_solicitacao: '12', id_referencia_origem: 'cliente-1', id_pedido_niss: '106002',
+      email: 'cliente@example.com', data_nascimento: '1990-12-31T00:00:00.000Z',
+      status_operacional: 3, status_operacional_nome: 'CONCLUIDO', quantidade_tentativas: 2,
+      niss_ee: '12345678901', niss_comunicado: '98765432100', criado_em: '2026-07-22T10:00:00Z',
+      atualizado_em: '2026-07-22T11:00:00Z',
+    })).toMatchObject({
+      niss: '98765432100',
+      nissCommunicated: true,
+    })
+  })
+
+  it('não exibe o niss da entidade empregadora quando não há comprovativo do cidadão', () => {
+    expect(mapNissProcess({
+      id_solicitacao: '12', id_referencia_origem: 'cliente-1', id_pedido_niss: '106002',
+      email: 'cliente@example.com', data_nascimento: '1990-12-31T00:00:00.000Z',
+      status_operacional: 3, status_operacional_nome: 'CONCLUIDO', quantidade_tentativas: 2,
+      niss_ee: '12345678901', niss_comunicado: null, criado_em: '2026-07-22T10:00:00Z',
+      atualizado_em: '2026-07-22T11:00:00Z',
+    })).toMatchObject({
+      niss: null,
+      nissCommunicated: false,
     })
   })
 

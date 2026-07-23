@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { buildDossierSummary, buildDossierSections } from './niss-dossier'
+import { buildDossierSummary, buildDossierSections, buildDossierTitle } from './niss-dossier'
+
+describe('buildDossierTitle', () => {
+  it('monta o título com primeiro e último nome do cidadão', () => {
+    expect(buildDossierTitle({
+      cidadao: { nome: 'Maria', sobrenome: 'Souza' },
+      solicitacao: { id_solicitacao: 12 },
+    })).toBe('Pedido de Maria Souza')
+  })
+
+  it('usa o id da solicitação como fallback quando não há nome', () => {
+    expect(buildDossierTitle({
+      solicitacao: { id_solicitacao: 12 },
+    })).toBe('Pedido 12')
+  })
+})
 
 describe('buildDossierSummary', () => {
   it('retorna um texto de resumo para pedidos negados', () => {
@@ -44,7 +59,7 @@ describe('buildDossierSections', () => {
       },
       processo: {
         estado_pedido: 'NEGADO',
-        niss_ee: '12345678901',
+        niss_comunicado: '12345678901',
         ultima_consulta_em: '2026-07-22T10:00:00Z',
       },
       cidadao: {
@@ -63,5 +78,6 @@ describe('buildDossierSections', () => {
     expect(detailsSection?.entries.some((entry) => entry.label === 'Status')).toBe(true)
     expect(detailsSection?.entries.some((entry) => entry.label === 'Metadados')).toBe(false)
     expect(detailsSection?.entries.some((entry) => entry.label === 'ID da solicitação')).toBe(false)
+    expect(detailsSection?.entries.some((entry) => entry.label === 'NISS' && entry.value === '12345678901')).toBe(true)
   })
 })

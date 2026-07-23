@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  AlertTriangle,
   BadgeCheck,
   CheckCircle2,
   ChevronDown,
@@ -233,10 +234,28 @@ watch(
             <TableCell><p class="font-medium">{{ clientName(process.client) }}</p><p class="text-xs text-muted-foreground">{{ process.email }}</p><p class="text-xs text-muted-foreground">Nascimento: {{ date(process.birthDate) }}</p></TableCell>
             <TableCell><p class="font-medium">{{ process.requestNumber }}</p></TableCell>
             <TableCell><span :class="['inline-flex rounded-full p-1.5', statusClass(process.operationalStatus)]" :title="process.operationalStatusName.replace(/_/g, ' ')"><component :is="statusIcon(process.operationalStatus)" :class="['h-5 w-5', process.operationalStatus === 1 ? 'animate-spin' : '']" /><span class="sr-only">{{ process.operationalStatusName.replace(/_/g, ' ') }}</span></span></TableCell>
-            <TableCell>{{ process.niss || '-' }}<BadgeCheck v-if="process.nissCommunicated" class="ml-1 inline h-4 w-4 text-green-600" /></TableCell>
+            <TableCell>
+              <div class="flex items-center gap-1">
+                <span>{{ process.niss || '-' }}</span>
+                <BadgeCheck v-if="process.nissCommunicated" class="inline h-4 w-4 text-green-600" />
+                <AlertTriangle v-else-if="process.operationalStatus === 3 && !process.niss" class="inline h-4 w-4 text-amber-600" />
+                <span v-if="process.operationalStatus === 3 && !process.niss" class="sr-only">Solicitar comprovativo à entidade</span>
+              </div>
+            </TableCell>
             <TableCell>{{ process.attempts }}<p v-if="process.denialReason" class="max-w-xs text-xs text-destructive">{{ process.denialReason }}</p></TableCell>
             <TableCell>{{ date(process.updatedAt, true) }}</TableCell>
-            <TableCell><div class="flex justify-end gap-2"><Button size="sm" variant="outline" :disabled="isLoadingDossier" @click="openDossier(process.id)"><FileSearch class="mr-2 h-4 w-4" />Dossiê</Button><Button size="sm" variant="outline" :disabled="isLoadingDocuments" @click="openDocuments(process.id)"><FolderOpen class="mr-2 h-4 w-4" />Documentos</Button></div></TableCell>
+            <TableCell>
+              <div class="flex justify-end gap-2">
+                <Button size="sm" variant="outline" :disabled="isLoadingDossier" @click="openDossier(process.id)" title="Dossiê" aria-label="Dossiê">
+                  <FileSearch class="h-4 w-4" />
+                  <span class="sr-only">Dossiê</span>
+                </Button>
+                <Button size="sm" variant="outline" :disabled="isLoadingDocuments" @click="openDocuments(process.id)" title="Documentos" aria-label="Documentos">
+                  <FolderOpen class="h-4 w-4" />
+                  <span class="sr-only">Documentos</span>
+                </Button>
+              </div>
+            </TableCell>
           </TableRow>
         </TableBody>
       </Table>

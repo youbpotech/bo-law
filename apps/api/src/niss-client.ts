@@ -103,13 +103,26 @@ function nullableText(value: unknown): string | null {
 }
 
 export function mapNissProcess(row: BotNissRow): NissProcess {
+  const operationalStatus = Number(row.status_operacional)
+  const communicatedRawValue = row.niss_comunicado
+  const communicatedNiss =
+    typeof communicatedRawValue === 'string'
+      ? communicatedRawValue.trim() || null
+      : communicatedRawValue === true
+        ? null
+        : communicatedRawValue === false
+          ? null
+          : communicatedRawValue === null || communicatedRawValue === undefined
+            ? null
+            : nullableText(communicatedRawValue)
+
   return {
     id: text(row.id_solicitacao),
     clientId: text(row.id_referencia_origem),
     requestNumber: text(row.id_pedido_niss),
     email: text(row.email),
     birthDate: text(row.data_nascimento).slice(0, 10),
-    operationalStatus: Number(row.status_operacional),
+    operationalStatus,
     operationalStatusName: text(row.status_operacional_nome),
     attempts: Number(row.quantidade_tentativas || 0),
     nextConsultationAt: nullableText(row.consultar_apos),
@@ -117,11 +130,8 @@ export function mapNissProcess(row: BotNissRow): NissProcess {
     lastAttemptAt: nullableText(row.ultima_tentativa_em),
     denialReason: nullableText(row.motivo_negacao),
     portalStatus: nullableText(row.estado_pedido),
-    niss: nullableText(row.niss_ee),
-    nissCommunicated:
-      row.niss_comunicado === null || row.niss_comunicado === undefined
-        ? null
-        : Boolean(row.niss_comunicado),
+    niss: communicatedNiss,
+    nissCommunicated: Boolean(communicatedNiss),
     lastPortalConsultationAt: nullableText(row.ultima_consulta_em),
     createdAt: text(row.criado_em),
     updatedAt: text(row.atualizado_em),

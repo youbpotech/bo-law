@@ -33,8 +33,26 @@ function formatValue(value: unknown): string {
   return JSON.stringify(value)
 }
 
+function resolveCitizenNiss(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed || null
+  }
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'boolean') return null
+  return formatValue(value) === '—' ? null : formatValue(value)
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeText(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number') return String(value)
+  return String(value).trim()
 }
 
 function buildEntriesFromObject(source: Record<string, unknown>, labels: Record<string, string>): DossierSectionEntry[] {
@@ -45,6 +63,21 @@ function buildEntriesFromObject(source: Record<string, unknown>, labels: Record<
       label: labels[key] || key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2'),
       value: formatValue(value),
     }))
+}
+
+export function buildDossierTitle(dossier: Record<string, unknown>): string {
+  const cidadao = isPlainObject(dossier.cidadao) ? dossier.cidadao : {}
+  const firstName = normalizeText(cidadao.nome || cidadao.nome_completo || cidadao.full_name)
+  const lastName = normalizeText(cidadao.sobrenome || cidadao.surname)
+
+  if (firstName || lastName) {
+    const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
+    return `Pedido de ${fullName}`
+  }
+
+  const solicitacao = isPlainObject(dossier.solicitacao) ? dossier.solicitacao : {}
+  const processId = solicitacao.id_solicitacao || solicitacao.id || solicitacao.request_number
+  return processId ? `Pedido ${String(processId)}` : 'Pedido'
 }
 
 export function buildDossierSummary(input: {
@@ -58,7 +91,7 @@ export function buildDossierSummary(input: {
   const clientName = input.clientName?.trim() || 'o cliente'
   const decisionDate = input.decisionDate ? formatValue(input.decisionDate) : 'na data da decisão'
   const reason = input.denialReason?.trim() || 'motivo não informado'
-  const niss = input.niss?.trim()
+  const niss = resolveCitizenNiss(input.niss)
 
   if (normalizedStatus === 'NEGADO') {
     return `O pedido de NISS de ${clientName} foi reprovado em ${decisionDate}, com indicação de ${reason}. O procedimento não avançou para a concessão do benefício, razão pela qual a decisão requer análise cuidadosa quanto à necessidade de revisão ou de novo encaminhamento.`
@@ -99,7 +132,7 @@ export function buildDossierSections(dossier: Record<string, unknown>): DossierS
           clientName: (cidadao.nome || cidadao.nome_completo || cidadao.full_name) as string | null | undefined,
           decisionDate: processo.data_estado_pedido || processo.data_estado_pedido_epoch_ms || solicitacao.atualizado_em,
           denialReason: solicitacao.motivo_negacao as string | null | undefined,
-          niss: processo.niss_ee as string | null | undefined,
+          niss: processo.niss_comunicado as string | null | undefined,
         }),
       },
     ],
@@ -114,7 +147,7 @@ export function buildDossierSections(dossier: Record<string, unknown>): DossierS
           pedido: solicitacao.id_pedido_niss || solicitacao.id_pedido || solicitacao.request_number,
           email: solicitacao.email,
           data_nascimento: solicitacao.data_nascimento,
-          niss: processo.niss_ee,
+          niss: processo.niss_comunicado,
           motivo: solicitacao.motivo_negacao || processo.motivo_estado_pedido,
         },
         {
