@@ -1,7 +1,7 @@
 # Backoffice Jurídico
 
 Semente de backoffice multiempresa para escritórios de advocacia, construída com Vue 3,
-TypeScript, Express, TypeORM e PostgreSQL.
+TypeScript, Express, TypeORM, Keycloak e PostgreSQL.
 
 ## Escopo inicial
 
@@ -22,6 +22,7 @@ Veja [docs/legal-workflow.md](docs/legal-workflow.md) para o contrato de domíni
 - Vue 3, Composition API, Tailwind CSS e componentes shadcn/ui.
 - TanStack Query, Pinia, Vue Router e Vue i18n.
 - Express 5, TypeORM e PostgreSQL 18.
+- Keycloak 26 para autenticação, usuários, roles e permissões de menu/processo.
 - Integrações opcionais com OpenAI, Twilio e transcrição de áudio.
 
 ## Execução com Docker
@@ -30,7 +31,7 @@ Pré-requisitos: Docker com Docker Compose e Make.
 
 ```sh
 make setup
-# Defina senhas, AUTH_SECRET, BOOTSTRAP_ROOT_* e integrações no .env
+# Defina POSTGRES_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, BOOTSTRAP_ROOT_* e integrações no .env
 make up
 ```
 
@@ -38,6 +39,7 @@ Serviços padrão:
 
 - aplicação: `http://localhost:8080`;
 - API: acessível pelo proxy em `/api`;
+- Keycloak Admin: `http://127.0.0.1:8081`;
 - pgAdmin opcional: `make pgadmin`, disponível apenas em `http://127.0.0.1:5050`.
 
 No primeiro acesso ao pgAdmin, registre o servidor `db`, porta `5432`, com os valores
@@ -56,15 +58,38 @@ de forma irreversível.
 Não existe credencial conhecida embutida. Na primeira execução, configure no `.env`:
 
 ```env
-AUTH_SECRET=um-segredo-aleatorio-com-pelo-menos-32-caracteres
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=uma-senha-administrativa-forte
+KEYCLOAK_REALM=bo-law
+KEYCLOAK_CLIENT_ID=bo-law-api
 BOOTSTRAP_ROOT_NAME=Administrador
 BOOTSTRAP_ROOT_USERNAME=admin
 BOOTSTRAP_ROOT_PASSWORD=uma-senha-forte-com-12-ou-mais-caracteres
 BOOTSTRAP_ROOT_COMPANY_ID=1
 ```
 
-O bootstrap cria o root somente quando ainda não existe nenhum. Depois do primeiro acesso,
-remova `BOOTSTRAP_ROOT_PASSWORD` do ambiente; reinícios posteriores preservam o usuário.
+O bootstrap sincroniza o administrador com o Keycloak, atribui `platform-root` e a Role
+`Root` da empresa. Cada empresa criada recebe automaticamente sua própria Role Root.
+Depois da primeira sincronização, `BOOTSTRAP_ROOT_PASSWORD` pode ser removida; a credencial
+permanece exclusivamente no Keycloak.
+
+## Roles e permissões
+
+### Integração NISS
+
+Para habilitar o recurso NISS, configure no `.env` a URL e a chave da API HTTP do BotNiss:
+
+```dotenv
+BOTNISS_API_URL=http://host.docker.internal:3000
+BOTNISS_API_KEY=uma_chave_aleatoria_com_pelo_menos_32_caracteres
+```
+
+O `bo-law` apenas consome essa API. O BotNiss permanece um serviço independente e não é alterado por este projeto.
+
+O Keycloak contém as roles técnicas `dashboard`, `users`, `roles`, `clients`, `companies`,
+`leads` e `cases`. O backoffice permite que usuários Root criem roles compostas por empresa
+e as associem aos usuários. O mesmo acesso controla a visibilidade do menu e as respectivas
+rotas da API; ocultar o menu não é usado como única barreira de segurança.
 
 ## Leads e WhatsApp
 

@@ -23,8 +23,11 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
   email!: string | null
 
-  @Column({ type: 'varchar', length: 255, select: false })
-  password!: string
+  @Column({ type: 'varchar', length: 255, select: false, nullable: true })
+  password!: string | null
+
+  @Column({ name: 'keycloak_id', type: 'uuid', unique: true, nullable: true })
+  keycloakId!: string | null
 
   @Column({ name: 'company_id', type: 'integer' })
   companyId!: number
@@ -41,4 +44,7 @@ export class User {
   @ManyToOne(() => Company, (company) => company.users, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'company_id' })
   company!: Company
+
+  permissions?: string[]
+  roleRoot?: boolean
 }

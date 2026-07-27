@@ -26,6 +26,50 @@ services:
     networks:
       - backend
 
+  keycloak-db-init:
+    image: postgres:18-alpine
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-bo_law}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+    command: ['psql', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE SCHEMA IF NOT EXISTS keycloak']
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    restart: unless-stopped
+    command: ['start-dev', '--import-realm']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-keycloak-local-admin-change-me}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-bo_law}?currentSchema=keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+      KC_HEALTH_ENABLED: 'true'
+      KC_HOSTNAME_STRICT: 'false'
+      KC_HTTP_ENABLED: 'true'
+    volumes:
+      - ./keycloak/bo-law-realm.json:/opt/keycloak/data/import/bo-law-realm.json:ro
+    ports:
+      - '127.0.0.1:${KEYCLOAK_PORT:-8081}:8080'
+    healthcheck:
+      test: ['CMD-SHELL', 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n" >&3; grep -q "200 OK" <&3']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      keycloak-db-init:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
   api:
     build:
       context: .
@@ -41,7 +85,14 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
       DB_NAME: ${POSTGRES_DB:-bo_law}
       DB_SSL: 'false'
-      AUTH_SECRET: ${AUTH_SECRET:?Defina AUTH_SECRET no arquivo .env}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-bo-law}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-bo-law-api}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-keycloak-local-admin-change-me}
+      BOTNISS_API_URL: ${BOTNISS_API_URL:-http://host.docker.internal:3000}
+      BOTNISS_API_KEY: ${BOTNISS_API_KEY:-}
       BOOTSTRAP_ROOT_NAME: ${BOOTSTRAP_ROOT_NAME:-}
       BOOTSTRAP_ROOT_USERNAME: ${BOOTSTRAP_ROOT_USERNAME:-}
       BOOTSTRAP_ROOT_PASSWORD: ${BOOTSTRAP_ROOT_PASSWORD:-}
@@ -70,6 +121,8 @@ services:
       - node apps/api/dist/scripts/run-migrations.js && node apps/api/dist/scripts/bootstrap-root.js && exec node apps/api/dist/index.js
     depends_on:
       db:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     networks:
       - backend

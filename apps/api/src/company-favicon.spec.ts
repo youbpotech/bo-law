@@ -1,0 +1,31 @@
+import { describe, expect, it } from 'vitest'
+import { parseCompanyFavicon } from './company-favicon'
+
+function pngDataUrl(width: number, height: number): string {
+  const data = Buffer.alloc(24)
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(data, 0)
+  data.write('IHDR', 12, 'ascii')
+  data.writeUInt32BE(width, 16)
+  data.writeUInt32BE(height, 20)
+  return `data:image/png;base64,${data.toString('base64')}`
+}
+
+describe('parseCompanyFavicon', () => {
+  it('aceita favicon quadrado dentro das dimensões permitidas', () => {
+    expect(parseCompanyFavicon(pngDataUrl(64, 64))).toMatchObject({
+      mimeType: 'image/png',
+      width: 64,
+      height: 64,
+    })
+  })
+
+  it('rejeita imagem retangular ou fora dos limites', () => {
+    expect(() => parseCompanyFavicon(pngDataUrl(64, 32))).toThrow('quadrado')
+    expect(() => parseCompanyFavicon(pngDataUrl(16, 16))).toThrow('32 × 32')
+  })
+
+  it('diferencia preservação e remoção', () => {
+    expect(parseCompanyFavicon(undefined)).toBeUndefined()
+    expect(parseCompanyFavicon(null)).toBeNull()
+  })
+})

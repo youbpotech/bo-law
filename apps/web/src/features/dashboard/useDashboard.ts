@@ -34,9 +34,14 @@ export function useDashboard() {
     widgets: computed(() => configQuery.data.value?.widgets ?? DEFAULT_DASHBOARD_WIDGETS),
     stats: computed(() => statsQuery.data.value),
     isLoading: computed(() => configQuery.isLoading.value || statsQuery.isLoading.value),
+    isRefreshing: computed(() => configQuery.isFetching.value || statsQuery.isFetching.value),
     error: computed(() => configQuery.error.value ?? statsQuery.error.value),
     saveWidgets: updateMutation.mutateAsync,
     isSaving: updateMutation.isPending,
-    refresh: () => Promise.all([configQuery.refetch(), statsQuery.refetch()]),
+    refresh: async () => {
+      const results = await Promise.all([configQuery.refetch(), statsQuery.refetch()])
+      const failed = results.find((result) => result.error)
+      if (failed?.error) throw failed.error
+    },
   }
 }
