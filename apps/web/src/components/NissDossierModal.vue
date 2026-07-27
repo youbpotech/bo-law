@@ -25,21 +25,6 @@ defineEmits<{ (e: 'update:open', value: boolean): void }>()
 const isExporting = ref(false)
 const contentRef = ref<HTMLElement | null>(null)
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
-  if (typeof value === 'number') return String(value)
-  const str = String(value)
-  if (/^\d{4}-\d{2}-\d{2}(T|\s)/.test(str)) {
-    try {
-      return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(str))
-    } catch {
-      return str
-    }
-  }
-  return str
-}
-
 const sections = computed(() => {
   if (!props.dossier) return []
   return buildDossierSections(props.dossier as Record<string, unknown>)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   AlertTriangle,
@@ -27,11 +27,17 @@ import TableHeader from '@/components/ui/TableHeader.vue'
 import TableRow from '@/components/ui/TableRow.vue'
 import NissDossierModal from '@/components/NissDossierModal.vue'
 import NissDocumentsModal from '@/components/NissDocumentsModal.vue'
+import NissCitizenDetailsModal from '@/components/NissCitizenDetailsModal.vue'
 import { useClients, useNiss, useSession, type Client, type NissInput, type NissDocument } from '@/composables/useApi'
 
 const route = useRoute()
 const router = useRouter()
-const { clients, isLoading: clientsLoading } = useClients()
+const {
+  clients,
+  isLoading: clientsLoading,
+  atualizarCliente,
+  isUpdating: isUpdatingClient,
+} = useClients()
 const { currentUser } = useSession()
 const {
   processes, isLoading, error, criarNiss, buscarDossie, buscarDocumentos, baixarDocumento,
@@ -49,8 +55,16 @@ const dossierError = ref('')
 const isDocumentsOpen = ref(false)
 const documents = ref<NissDocument[]>([])
 const documentsProcessId = ref('')
+const documentsRequestNumber = ref('')
 const documentsError = ref('')
+const isCitizenDetailsOpen = ref(false)
+const citizenDetailsRequestNumber = ref('')
+const citizenDetailsClient = ref<Client | null>(null)
+const citizenDetailsDossier = ref<Record<string, unknown> | null>(null)
+const citizenDetailsError = ref('')
 const actionError = ref('')
+const currentTime = ref(Date.now())
+let currentTimeInterval: number | undefined
 const dossierModalRef = ref<InstanceType<typeof NissDossierModal> | null>(null)
 const form = reactive<NissInput>({ clientId: '', requestNumber: '', email: '', birthDate: '' })
 
@@ -136,6 +150,21 @@ function date(value: string | null, includeTime = false): string {
   return new Intl.DateTimeFormat('pt-PT', includeTime ? { dateStyle: 'short', timeStyle: 'short' } : { dateStyle: 'short' }).format(new Date(value))
 }
 
+function elapsedTime(value: string | null): string {
+  if (!value) return '—'
+  const difference = Math.max(0, currentTime.value - new Date(value).getTime())
+  const totalHours = Math.floor(difference / 3_600_000)
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+  if (days > 0) {
+    const dayText = `${days} ${days === 1 ? 'dia' : 'dias'}`
+    const hourText = hours > 0 ? ` e ${hours} ${hours === 1 ? 'hora' : 'horas'}` : ''
+    return `${dayText}${hourText} atrás`
+  }
+  if (totalHours > 0) return `${totalHours} ${totalHours === 1 ? 'hora' : 'horas'} atrás`
+  return 'Há menos de 1 hora'
+}
+
 function statusClass(status: number): string {
   if (status === 3) return 'bg-green-600/10 text-green-700 dark:text-green-400'
   if (status === 2) return 'bg-destructive/10 text-destructive'
@@ -162,16 +191,41 @@ async function openDossier(id: string): Promise<void> {
   }
 }
 
-async function openDocuments(id: string): Promise<void> {
+async function openDocuments(id: string, requestNumber: string): Promise<void> {
   documentsError.value = ''
   documents.value = []
   documentsProcessId.value = id
+  documentsRequestNumber.value = requestNumber
   isDocumentsOpen.value = true
   try {
     documents.value = await buscarDocumentos(id)
   } catch (caughtError) {
     documentsError.value = caughtError instanceof Error ? caughtError.message : 'Não foi possível listar os documentos.'
   }
+}
+
+async function openCitizenDetails(process: {
+  id: string
+  requestNumber: string
+  client: Client
+}): Promise<void> {
+  citizenDetailsRequestNumber.value = process.requestNumber
+  citizenDetailsClient.value = process.client
+  citizenDetailsDossier.value = null
+  citizenDetailsError.value = ''
+  isCitizenDetailsOpen.value = true
+  try {
+    citizenDetailsDossier.value = await buscarDossie(process.id)
+  } catch (caughtError) {
+    citizenDetailsError.value =
+      caughtError instanceof Error
+        ? caughtError.message
+        : 'Não foi possível consultar os dados do cidadão.'
+  }
+}
+
+function handleCitizenSaved(): void {
+  void refresh()
 }
 
 function getDossierPdfGenerator(): (() => Promise<Blob>) | null {
@@ -196,6 +250,16 @@ watch(
   },
   { immediate: true },
 )
+
+onMounted(() => {
+  currentTimeInterval = window.setInterval(() => {
+    currentTime.value = Date.now()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (currentTimeInterval) window.clearInterval(currentTimeInterval)
+})
 </script>
 
 <template>
@@ -224,14 +288,14 @@ watch(
       <Table>
         <TableHeader><TableRow>
           <TableHead>Cliente</TableHead><TableHead>Pedido NISS</TableHead><TableHead>Status</TableHead>
-          <TableHead>NISS</TableHead><TableHead>Tentativas</TableHead><TableHead>Atualizado em</TableHead><TableHead class="text-right">Ações</TableHead>
+          <TableHead>NISS</TableHead><TableHead>Apontamentos</TableHead><TableHead>Atualizado a</TableHead><TableHead class="text-right">Ações</TableHead>
         </TableRow></TableHeader>
         <TableBody>
           <TableRow v-if="isLoading"><TableCell colspan="7" class="text-center text-muted-foreground">Carregando...</TableCell></TableRow>
           <TableRow v-else-if="error"><TableCell colspan="7" class="text-center text-destructive">{{ error.message }}</TableCell></TableRow>
           <TableRow v-else-if="!filteredProcesses.length"><TableCell colspan="7" class="text-center text-muted-foreground">Nenhuma solicitação NISS encontrada.</TableCell></TableRow>
           <TableRow v-for="process in filteredProcesses" v-else :key="process.id">
-            <TableCell><p class="font-medium">{{ clientName(process.client) }}</p><p class="text-xs text-muted-foreground">{{ process.email }}</p><p class="text-xs text-muted-foreground">Nascimento: {{ date(process.birthDate) }}</p></TableCell>
+            <TableCell><div class="flex w-full items-start justify-between gap-3"><div><p class="font-medium">{{ clientName(process.client) }}</p><p class="text-xs text-muted-foreground">{{ process.email }}</p><p class="text-xs text-muted-foreground">Nascimento: {{ date(process.birthDate) }}</p></div><Button size="sm" variant="outline" class="h-7 shrink-0 px-2 text-xs" @click="openCitizenDetails(process)">Detalhes</Button></div></TableCell>
             <TableCell><p class="font-medium">{{ process.requestNumber }}</p></TableCell>
             <TableCell><span :class="['inline-flex rounded-full p-1.5', statusClass(process.operationalStatus)]" :title="process.operationalStatusName.replace(/_/g, ' ')"><component :is="statusIcon(process.operationalStatus)" :class="['h-5 w-5', process.operationalStatus === 1 ? 'animate-spin' : '']" /><span class="sr-only">{{ process.operationalStatusName.replace(/_/g, ' ') }}</span></span></TableCell>
             <TableCell>
@@ -242,15 +306,15 @@ watch(
                 <span v-if="process.operationalStatus === 3 && !process.niss" class="sr-only">Solicitar comprovativo à entidade</span>
               </div>
             </TableCell>
-            <TableCell>{{ process.attempts }}<p v-if="process.denialReason" class="max-w-xs text-xs text-destructive">{{ process.denialReason }}</p></TableCell>
-            <TableCell>{{ date(process.updatedAt, true) }}</TableCell>
+            <TableCell><p v-if="process.denialReason" class="max-w-xs text-xs text-destructive">{{ process.denialReason }}</p><span v-else>—</span></TableCell>
+            <TableCell>{{ elapsedTime(process.updatedAt) }}</TableCell>
             <TableCell>
               <div class="flex justify-end gap-2">
                 <Button size="sm" variant="outline" :disabled="isLoadingDossier" @click="openDossier(process.id)" title="Dossiê" aria-label="Dossiê">
                   <FileSearch class="h-4 w-4" />
                   <span class="sr-only">Dossiê</span>
                 </Button>
-                <Button size="sm" variant="outline" :disabled="isLoadingDocuments" @click="openDocuments(process.id)" title="Documentos" aria-label="Documentos">
+                <Button size="sm" variant="outline" :disabled="isLoadingDocuments" @click="openDocuments(process.id, process.requestNumber)" title="Documentos" aria-label="Documentos">
                   <FolderOpen class="h-4 w-4" />
                   <span class="sr-only">Documentos</span>
                 </Button>
@@ -338,11 +402,25 @@ watch(
   <NissDocumentsModal
     :open="isDocumentsOpen"
     :process-id="documentsProcessId"
+    :request-number="documentsRequestNumber"
     :documents="documents"
     :is-loading="isLoadingDocuments"
     :error="documentsError"
     :baixar-documento="baixarDocumento"
     :generate-dossier-pdf="getDossierPdfGenerator()"
     @update:open="(v) => !v && (isDocumentsOpen = false)"
+  />
+
+  <NissCitizenDetailsModal
+    :open="isCitizenDetailsOpen"
+    :request-number="citizenDetailsRequestNumber"
+    :client="citizenDetailsClient"
+    :dossier="citizenDetailsDossier"
+    :is-loading="isLoadingDossier"
+    :is-saving="isUpdatingClient"
+    :error="citizenDetailsError"
+    :update-client="atualizarCliente"
+    @saved="handleCitizenSaved"
+    @update:open="(v) => !v && (isCitizenDetailsOpen = false)"
   />
 </template>

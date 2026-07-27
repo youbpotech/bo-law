@@ -12,6 +12,7 @@ import TableBody from '@/components/ui/TableBody.vue'
 import TableRow from '@/components/ui/TableRow.vue'
 import TableHead from '@/components/ui/TableHead.vue'
 import TableCell from '@/components/ui/TableCell.vue'
+import GeographySearchField from '@/components/GeographySearchField.vue'
 import { useClients, type Client, type ClientInput } from '@/composables/useApi'
 import { Plus, Search, Users } from 'lucide-vue-next'
 
@@ -45,9 +46,6 @@ const parentFields: Field[] = [
   { key: 'parent2Name', label: 'Nome do progenitor 2', max: 200 }, { key: 'parent2Surname', label: 'Apelido do progenitor 2', max: 200 },
 ]
 const birthFields: Field[] = [
-  { key: 'nationalityCountry', label: 'País de nacionalidade', max: 10, placeholder: 'ISO: PT, BR, ...' },
-  { key: 'birthCountry', label: 'País de naturalidade', max: 10, placeholder: 'ISO: PT, BR, ...' },
-  { key: 'birthProvince', label: 'Província / departamento', max: 200 }, { key: 'birthProvinceCode', label: 'Código da província', max: 50 },
   { key: 'birthPlace', label: 'Local de nascimento', max: 200 }, { key: 'birthDistrictId', label: 'Distrito de naturalidade (código)', type: 'number' },
   { key: 'birthMunicipalityId', label: 'Concelho de naturalidade (código)', type: 'number' }, { key: 'birthParishId', label: 'Freguesia de naturalidade (código)', type: 'number' },
 ]
@@ -61,7 +59,7 @@ const contactFields: Field[] = [
   { key: 'phone', label: 'Telefone', type: 'tel', max: 30 },
 ]
 const residenceFields: Field[] = [
-  { key: 'residenceCountry', label: 'País de residência', max: 10, placeholder: 'ISO: PT, BR, ...' }, { key: 'residenceAddress', label: 'Morada de residência', max: 500 },
+  { key: 'residenceAddress', label: 'Morada de residência', max: 500 },
   { key: 'residenceLocality', label: 'Localidade de residência', max: 200 }, { key: 'residencePostalCode', label: 'Código postal', max: 30 },
   { key: 'residencePostalLocality', label: 'Localidade postal', max: 200 }, { key: 'residenceDistrictId', label: 'Distrito de residência (código)', type: 'number' },
   { key: 'residenceMunicipalityId', label: 'Concelho de residência (código)', type: 'number' }, { key: 'residenceParishId', label: 'Freguesia de residência (código)', type: 'number' },
@@ -127,6 +125,13 @@ async function deleteClient(client: Client): Promise<void> {
   try { await excluirCliente(client.id) } catch (caughtError) { window.alert(caughtError instanceof Error ? caughtError.message : t('clients.deleteError')) }
 }
 function formatDate(value: string): string { return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) }
+function selectBirthCountry(value: string): void {
+  if (form.birthCountry !== value) {
+    form.birthProvince = ''
+    form.birthProvinceCode = ''
+  }
+  form.birthCountry = value
+}
 onMounted(() => { if (route.query.new === '1') openCreateDialog() })
 </script>
 
@@ -151,10 +156,10 @@ onMounted(() => { if (route.query.new === '1') openCreateDialog() })
       <section><h3 class="mb-3 font-semibold">Identificação fiscal</h3><div class="grid gap-4 sm:grid-cols-3"><div class="space-y-2"><label class="text-sm font-medium">NIF português</label><Input v-model="form.portugueseTaxId" maxlength="20" /></div><div class="space-y-2"><label class="text-sm font-medium">Tipo de identificação fiscal estrangeira</label><Select v-model="form.foreignTaxIdType"><option value="">Selecione</option><option v-for="option in foreignTaxTypes" :key="option[0]" :value="option[0]">{{ option[1] }}</option></Select></div><div class="space-y-2"><label class="text-sm font-medium">Identificação fiscal estrangeira</label><Input v-model="form.foreignTaxId" maxlength="20" /></div></div></section>
 
       <section><h3 class="mb-3 font-semibold">Filiação</h3><div class="grid gap-4 sm:grid-cols-2"><div v-for="field in parentFields" :key="field.key" class="space-y-2"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :maxlength="field.max" /></div></div></section>
-      <section><h3 class="mb-3 font-semibold">Nacionalidade e naturalidade</h3><div class="grid gap-4 sm:grid-cols-3"><div v-for="field in birthFields" :key="field.key" class="space-y-2"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :type="field.type" :maxlength="field.max" :placeholder="field.placeholder" :min="field.type === 'number' ? 1 : undefined" /></div></div></section>
+      <section><h3 class="mb-3 font-semibold">Nacionalidade e naturalidade</h3><div class="grid gap-4 sm:grid-cols-3"><div class="space-y-2"><label class="text-sm font-medium">País de nacionalidade</label><GeographySearchField v-model="form.nationalityCountry" kind="country" placeholder="Pesquisar país..." /></div><div class="space-y-2"><label class="text-sm font-medium">País de naturalidade</label><GeographySearchField :model-value="form.birthCountry" kind="country" placeholder="Pesquisar país..." @update:model-value="selectBirthCountry" /></div><div class="space-y-2"><label class="text-sm font-medium">Estado / província</label><GeographySearchField v-model="form.birthProvinceCode" v-model:selected-label="form.birthProvince" kind="state" :country="form.birthCountry" placeholder="Pesquisar estado..." /></div><div v-for="field in birthFields" :key="field.key" class="space-y-2"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :type="field.type" :maxlength="field.max" :placeholder="field.placeholder" :min="field.type === 'number' ? 1 : undefined" /></div></div></section>
       <section><h3 class="mb-3 font-semibold">Documento civil</h3><div class="grid gap-4 sm:grid-cols-3"><div class="space-y-2"><label class="text-sm font-medium">Tipo de documento</label><Select v-model="form.civilDocumentType"><option value="">Selecione</option><option v-for="option in documentTypes" :key="option[0]" :value="option[0]">{{ option[1] }}</option></Select></div><div v-for="field in documentFields" :key="field.key" class="space-y-2"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :type="field.type" :maxlength="field.max" /></div></div></section>
       <section><h3 class="mb-3 font-semibold">Contactos</h3><div class="grid gap-4 sm:grid-cols-3"><div v-for="field in contactFields" :key="field.key" class="space-y-2"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :type="field.type" :maxlength="field.max" :placeholder="field.placeholder" /></div></div></section>
-      <section><h3 class="mb-3 font-semibold">Residência</h3><div class="grid gap-4 sm:grid-cols-3"><div v-for="field in residenceFields" :key="field.key" :class="['space-y-2', field.key === 'residenceAddress' ? 'sm:col-span-2' : '']"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :type="field.type" :maxlength="field.max" :placeholder="field.placeholder" :min="field.type === 'number' ? 1 : undefined" /></div></div></section>
+      <section><h3 class="mb-3 font-semibold">Residência</h3><div class="grid gap-4 sm:grid-cols-3"><div class="space-y-2"><label class="text-sm font-medium">País de residência</label><GeographySearchField v-model="form.residenceCountry" kind="country" placeholder="Pesquisar país..." /></div><div v-for="field in residenceFields" :key="field.key" :class="['space-y-2', field.key === 'residenceAddress' ? 'sm:col-span-2' : '']"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :type="field.type" :maxlength="field.max" :placeholder="field.placeholder" :min="field.type === 'number' ? 1 : undefined" /></div></div></section>
       <section><h3 class="mb-3 font-semibold">Endereço estrangeiro</h3><div class="grid gap-4 sm:grid-cols-2"><div v-for="field in foreignAddressFields" :key="field.key" class="space-y-2"><label class="text-sm font-medium">{{ field.label }}</label><Input v-model="form[field.key]" :maxlength="field.max" /></div></div></section>
 
       <p v-if="formError" class="text-sm text-destructive">{{ formError }}</p><div class="sticky bottom-0 flex justify-end gap-2 border-t bg-background py-4"><Button type="button" variant="outline" @click="closeDialog">{{ $t('common.cancel') }}</Button><Button type="submit" :disabled="isSaving">{{ isSaving ? $t('common.loading') : $t('common.save') }}</Button></div>

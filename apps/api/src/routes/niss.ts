@@ -43,7 +43,9 @@ nissRouter.get('/niss', requireAuth, async (req, res) => {
       .map((process) => ({ ...process, client: byId.get(process.clientId) }))
     res.json(processes)
   } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao consultar o BotNiss.' })
+    res
+      .status(502)
+      .json({ error: error instanceof Error ? error.message : 'Falha ao consultar o BotNiss.' })
   }
 })
 
@@ -51,22 +53,39 @@ nissRouter.post('/niss', requireAuth, async (req, res) => {
   const user = await requireResourceUser(req, res, 'niss')
   if (!user) return
   const clientId = typeof req.body.clientId === 'string' ? req.body.clientId : ''
-  const requestNumber = typeof req.body.requestNumber === 'string' ? req.body.requestNumber.trim() : ''
+  const requestNumber =
+    typeof req.body.requestNumber === 'string' ? req.body.requestNumber.trim() : ''
   const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : ''
   const birthDate = typeof req.body.birthDate === 'string' ? req.body.birthDate : ''
   if (!UUID.test(clientId)) return void res.status(400).json({ error: 'Selecione um cliente.' })
-  if (!/^\d+$/.test(requestNumber)) return void res.status(400).json({ error: 'O número do pedido NISS deve conter somente dígitos.' })
-  if (!/^\S+@\S+\.\S+$/.test(email)) return void res.status(400).json({ error: 'Informe um email válido.' })
+  if (!/^\d+$/.test(requestNumber))
+    return void res
+      .status(400)
+      .json({ error: 'O número do pedido NISS deve conter somente dígitos.' })
+  if (!/^\S+@\S+\.\S+$/.test(email))
+    return void res.status(400).json({ error: 'Informe um email válido.' })
   if (!DATE.test(birthDate) || Number.isNaN(Date.parse(`${birthDate}T00:00:00Z`))) {
     return void res.status(400).json({ error: 'Informe uma data de nascimento válida.' })
   }
-  const client = await AppDataSource.getRepository(Client).findOneBy({ id: clientId, companyId: user.companyId })
-  if (!client) return void res.status(404).json({ error: 'Cliente não encontrado na empresa atual.' })
+  const client = await AppDataSource.getRepository(Client).findOneBy({
+    id: clientId,
+    companyId: user.companyId,
+  })
+  if (!client)
+    return void res.status(404).json({ error: 'Cliente não encontrado na empresa atual.' })
   try {
-    const process = await createNissProcess({ companyId: user.companyId, clientId, requestNumber, email, birthDate })
+    const process = await createNissProcess({
+      companyId: user.companyId,
+      clientId,
+      requestNumber,
+      email,
+      birthDate,
+    })
     res.status(201).json({ ...process, client })
   } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao criar solicitação no BotNiss.' })
+    res.status(502).json({
+      error: error instanceof Error ? error.message : 'Falha ao criar solicitação no BotNiss.',
+    })
   }
 })
 
@@ -78,7 +97,9 @@ nissRouter.get('/niss/:id/dossier', requireAuth, async (req, res) => {
     if (!authorized) return void res.status(404).json({ error: 'Pedido NISS não encontrado.' })
     res.json(await getNissDossier(req.params.id))
   } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao consultar o dossiê.' })
+    res
+      .status(502)
+      .json({ error: error instanceof Error ? error.message : 'Falha ao consultar o dossiê.' })
   }
 })
 
@@ -91,29 +112,33 @@ nissRouter.get('/niss/:id/documents', requireAuth, async (req, res) => {
     const documents = await getNissDocuments(req.params.id)
     res.json(documents.map(({ id, fileName, mimeType }) => ({ id, fileName, mimeType })))
   } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao consultar os documentos.' })
+    res
+      .status(502)
+      .json({ error: error instanceof Error ? error.message : 'Falha ao consultar os documentos.' })
   }
 })
 
-nissRouter.get('/niss/:id/documents/:docIndex', requireAuth, async (req, res) => {
+nissRouter.get('/niss/:id/documents/:fileName', requireAuth, async (req, res) => {
   const user = await requireResourceUser(req, res, 'niss')
   if (!user) return
   try {
     const authorized = await authorizedProcess(req.params.id, user.companyId)
     if (!authorized) return void res.status(404).json({ error: 'Pedido NISS não encontrado.' })
-    const docIndex = parseInt(req.params.docIndex, 10)
-    if (isNaN(docIndex) || docIndex < 0) return void res.status(400).json({ error: 'Índice do documento inválido.' })
     const documents = await getNissDocuments(req.params.id)
-    const document = documents[docIndex]
-    if (!document || !document.accessUrl) return void res.status(404).json({ error: 'Documento não encontrado.' })
-    const data = await downloadNissDocument(document.accessUrl)
-    const sanitizedFileName = document.fileName.replace(/[^a-zA-Z0-9._ -]/g, '_')
-    res.setHeader('Content-Type', document.mimeType || 'application/octet-stream')
+    const document = documents.find(({ fileName }) => fileName === req.params.fileName)
+    if (!document) return void res.status(404).json({ error: 'Documento não encontrado.' })
+    const download = await downloadNissDocument(req.params.id, document.fileName)
+    const sanitizedFileName = download.fileName
+      .replace(/^.*[\\/]/, '')
+      .replace(/[^a-zA-Z0-9._ -]/g, '_')
+    res.setHeader('Content-Type', download.mimeType)
     res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"`)
     res.setHeader('Cache-Control', 'no-store')
-    res.send(data)
+    res.send(download.data)
   } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao transferir o documento.' })
+    res
+      .status(502)
+      .json({ error: error instanceof Error ? error.message : 'Falha ao transferir o documento.' })
   }
 })
 
@@ -123,18 +148,31 @@ nissRouter.get('/niss/:id/documents.zip', requireAuth, async (req, res) => {
   try {
     const authorized = await authorizedProcess(req.params.id, user.companyId)
     if (!authorized) return void res.status(404).json({ error: 'Pedido NISS não encontrado.' })
-    const documents = (await getNissDocuments(req.params.id)).filter((document) => document.accessUrl)
-    if (!documents.length) return void res.status(404).json({ error: 'Este pedido ainda não possui documentos disponíveis.' })
-    const entries = await Promise.all(documents.map(async (document, index) => ({
-      name: `${String(index + 1).padStart(2, '0')}-${document.fileName.replace(/[^a-zA-Z0-9._ -]/g, '_')}`,
-      data: await downloadNissDocument(document.accessUrl!),
-    })))
+    const documents = await getNissDocuments(req.params.id)
+    if (!documents.length)
+      return void res
+        .status(404)
+        .json({ error: 'Este pedido ainda não possui documentos disponíveis.' })
+    const entries = await Promise.all(
+      documents.map(async (document, index) => {
+        const download = await downloadNissDocument(req.params.id, document.fileName)
+        const sanitizedFileName = download.fileName
+          .replace(/^.*[\\/]/, '')
+          .replace(/[^a-zA-Z0-9._ -]/g, '_')
+        return {
+          name: `${String(index + 1).padStart(2, '0')}-${sanitizedFileName}`,
+          data: download.data,
+        }
+      }),
+    )
     const archive = createZip(entries)
     res.setHeader('Content-Type', 'application/zip')
     res.setHeader('Content-Disposition', `attachment; filename="pedido-niss-${req.params.id}.zip"`)
     res.setHeader('Cache-Control', 'no-store')
     res.send(archive)
   } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao gerar o arquivo ZIP.' })
+    res
+      .status(502)
+      .json({ error: error instanceof Error ? error.message : 'Falha ao gerar o arquivo ZIP.' })
   }
 })

@@ -83,7 +83,7 @@ export function buildDossierTitle(dossier: Record<string, unknown>): string {
 export function buildDossierSummary(input: {
   status: DossierStatus
   clientName?: string | null
-  decisionDate?: string | null
+  decisionDate?: unknown
   denialReason?: string | null
   niss?: string | null
 }): string {

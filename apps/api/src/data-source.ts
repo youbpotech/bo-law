@@ -14,6 +14,7 @@ import { AddCompanyLogo1784764800000 } from './migrations/1784764800000-AddCompa
 import { ExpandClientProfile1784851200000 } from './migrations/1784851200000-ExpandClientProfile'
 import { AddKeycloakIdentity1784937600000 } from './migrations/1784937600000-AddKeycloakIdentity'
 import { AddCompanyFavicon1785024000000 } from './migrations/1785024000000-AddCompanyFavicon'
+import { AddGeographyReferences1785110400000 } from './migrations/1785110400000-AddGeographyReferences'
 
 config()
 
@@ -42,22 +43,14 @@ export const AppDataSource = new DataSource({
       }),
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
-  entities: [
-    User,
-    Company,
-    Client,
-    Lead,
-    LeadMessage,
-    LeadAudioProcessing,
-    LegalCase,
-    Invoice,
-  ],
+  entities: [User, Company, Client, Lead, LeadMessage, LeadAudioProcessing, LegalCase, Invoice],
   migrations: [
     CreateLegalBackoffice1784678400000,
     AddCompanyLogo1784764800000,
     ExpandClientProfile1784851200000,
     AddKeycloakIdentity1784937600000,
     AddCompanyFavicon1785024000000,
+    AddGeographyReferences1785110400000,
   ],
   subscribers: [],
 })

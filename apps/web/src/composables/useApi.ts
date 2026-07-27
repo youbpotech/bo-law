@@ -104,7 +104,15 @@ export interface UserInput {
   roleIds: string[]
 }
 
-export type ResourceKey = 'dashboard' | 'users' | 'roles' | 'clients' | 'companies' | 'leads' | 'cases' | 'niss'
+export type ResourceKey =
+  | 'dashboard'
+  | 'users'
+  | 'roles'
+  | 'clients'
+  | 'companies'
+  | 'leads'
+  | 'cases'
+  | 'niss'
 
 export interface NissProcess {
   id: string
@@ -160,9 +168,7 @@ export interface RoleInput {
 }
 
 export type ClientInput = Pick<Client, 'name'> &
-  Partial<
-    Omit<Client, 'id' | 'name' | 'companyId' | 'createdAt' | 'updatedAt'>
-  >
+  Partial<Omit<Client, 'id' | 'name' | 'companyId' | 'createdAt' | 'updatedAt'>>
 
 export interface CompanyInput {
   name: string
@@ -222,7 +228,15 @@ export function useSession() {
   const alternarEmpresaMutation = useMutation({
     mutationFn: alternarEmpresa,
     onSuccess: async ({ user }) => {
-      const tenantKeys = new Set(['users', 'clients', 'leads', 'lead', 'cases', 'dashboard', 'niss'])
+      const tenantKeys = new Set([
+        'users',
+        'clients',
+        'leads',
+        'lead',
+        'cases',
+        'dashboard',
+        'niss',
+      ])
       await queryClient.cancelQueries({
         predicate: (query) => tenantKeys.has(String(query.queryKey[0])),
       })
@@ -381,13 +395,23 @@ async function buscarRecursos(): Promise<ResourceDefinition[]> {
 
 async function criarRole(dados: RoleInput): Promise<ManagedRole> {
   return authRequest<ManagedRole>('/api/roles', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
   })
 }
 
-async function atualizarRole({ id, dados }: { id: string; dados: RoleInput }): Promise<ManagedRole> {
+async function atualizarRole({
+  id,
+  dados,
+}: {
+  id: string
+  dados: RoleInput
+}): Promise<ManagedRole> {
   return authRequest<ManagedRole>(`/api/roles/${id}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados),
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
   })
 }
 
@@ -399,10 +423,23 @@ export function useRoles(enabled: MaybeRefOrGetter<boolean> = true) {
   const queryClient = useQueryClient()
   const enabledValue = computed(() => toValue(enabled))
   const rolesQuery = useQuery({ queryKey: ['roles'], queryFn: buscarRoles, enabled: enabledValue })
-  const resourcesQuery = useQuery({ queryKey: ['resources'], queryFn: buscarRecursos, enabled: enabledValue })
-  const createMutation = useMutation({ mutationFn: criarRole, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }) })
-  const updateMutation = useMutation({ mutationFn: atualizarRole, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }) })
-  const deleteMutation = useMutation({ mutationFn: excluirRole, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }) })
+  const resourcesQuery = useQuery({
+    queryKey: ['resources'],
+    queryFn: buscarRecursos,
+    enabled: enabledValue,
+  })
+  const createMutation = useMutation({
+    mutationFn: criarRole,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }),
+  })
+  const updateMutation = useMutation({
+    mutationFn: atualizarRole,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }),
+  })
+  const deleteMutation = useMutation({
+    mutationFn: excluirRole,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['roles'] }),
+  })
   return {
     roles: computed(() => rolesQuery.data.value || []),
     resources: computed(() => resourcesQuery.data.value || []),
@@ -495,18 +532,52 @@ async function buscarDocumentosNiss(id: string): Promise<NissDocument[]> {
   return authRequest<NissDocument[]>(`/api/niss/${id}/documents`)
 }
 
-async function baixarDocumentoNiss({ processId, docIndex }: { processId: string; docIndex: number }): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/api/niss/${processId}/documents/${docIndex}`, {
-    headers: {
-      Authorization: `Bearer ${getAuthToken() ?? ''}`,
-      ...(getActiveCompanyId() ? { 'X-Company-Id': String(getActiveCompanyId()) } : {}),
+export type NissDocumentDownload = {
+  blob: Blob
+  fileName: string
+}
+
+function downloadFileName(response: Response, fallback: string): string {
+  const disposition = response.headers.get('content-disposition')
+  const encoded = disposition?.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim())
+    } catch {
+      // Continua para filename quando o valor estendido for inválido.
+    }
+  }
+  return (
+    disposition?.match(/filename\s*=\s*"([^"]+)"/i)?.[1] ??
+    disposition?.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim() ??
+    fallback
+  )
+}
+
+async function baixarDocumentoNiss({
+  processId,
+  fileName,
+}: {
+  processId: string
+  fileName: string
+}): Promise<NissDocumentDownload> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/niss/${encodeURIComponent(processId)}/documents/${encodeURIComponent(fileName)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${getAuthToken() ?? ''}`,
+        ...(getActiveCompanyId() ? { 'X-Company-Id': String(getActiveCompanyId()) } : {}),
+      },
     },
-  })
+  )
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string } | null
     throw new Error(body?.error ?? 'Não foi possível baixar o documento.')
   }
-  return response.blob()
+  return {
+    blob: await response.blob(),
+    fileName: downloadFileName(response, fileName),
+  }
 }
 
 async function baixarDocumentosNiss(id: string): Promise<Blob> {

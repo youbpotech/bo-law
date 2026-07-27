@@ -23,6 +23,7 @@ import { normalizeWhatsappPhone } from '../leads/twilio-service'
 import { casesRouter } from './cases'
 import { dashboardRouter, normalizeDashboardConfig } from './dashboard'
 import { nissRouter } from './niss'
+import { geographyRouter } from './geography'
 import { parseCompanyLogo } from '../company-logo'
 import { applyClientProfileInput } from '../client-profile'
 import { parseCompanyFavicon } from '../company-favicon'
@@ -104,6 +105,8 @@ function serializeUser(user: User, roleIds: string[] = []) {
 router.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'bo-law-api' })
 })
+
+router.use(geographyRouter)
 
 router.get('/branding/companies/:id', async (req, res) => {
   const id = Number(req.params.id)
@@ -532,11 +535,9 @@ router.put('/users/:id', requireAuth, async (req, res) => {
     ? req.body.roleIds.filter((id: unknown): id is string => typeof id === 'string')
     : []
   if (!name || !username || (password && password.length < 8)) {
-    res
-      .status(400)
-      .json({
-        error: 'Nome e usuário são obrigatórios; a nova senha deve ter ao menos 8 caracteres',
-      })
+    res.status(400).json({
+      error: 'Nome e usuário são obrigatórios; a nova senha deve ter ao menos 8 caracteres',
+    })
     return
   }
   if (!user.keycloakId) {
@@ -594,10 +595,22 @@ router.get('/resources', requireAuth, async (req, res) => {
   const currentUser = await requireRoleRootUser(req, res)
   if (!currentUser) return
   const names: Record<ResourceKey, string> = {
-    dashboard: 'Dashboard', users: 'Usuários', roles: 'Roles', clients: 'Clientes',
-    companies: 'Empresas', leads: 'Leads', cases: 'Processos', niss: 'NISS',
+    dashboard: 'Dashboard',
+    users: 'Usuários',
+    roles: 'Roles',
+    clients: 'Clientes',
+    companies: 'Empresas',
+    leads: 'Leads',
+    cases: 'Processos',
+    niss: 'NISS',
   }
-  res.json(RESOURCE_KEYS.map((key) => ({ key, name: names[key], kind: ['leads', 'cases', 'niss'].includes(key) ? 'process' : 'resource' })))
+  res.json(
+    RESOURCE_KEYS.map((key) => ({
+      key,
+      name: names[key],
+      kind: ['leads', 'cases', 'niss'].includes(key) ? 'process' : 'resource',
+    })),
+  )
 })
 
 router.get('/roles', requireAuth, async (req, res) => {
@@ -611,40 +624,73 @@ router.post('/roles', requireAuth, async (req, res) => {
   if (!currentUser) return
   const name = normalizeText(req.body.name)
   const resources = Array.isArray(req.body.resources)
-    ? req.body.resources.filter((key: unknown): key is ResourceKey => typeof key === 'string' && RESOURCE_KEYS.includes(key as ResourceKey))
+    ? req.body.resources.filter(
+        (key: unknown): key is ResourceKey =>
+          typeof key === 'string' && RESOURCE_KEYS.includes(key as ResourceKey),
+      )
     : []
   if (!name || name.length > 100) {
     res.status(400).json({ error: 'Nome da role é obrigatório e deve ter até 100 caracteres' })
     return
   }
-  res.status(201).json(await createCompanyRole(currentUser.companyId, { name, description: normalizeNullableText(req.body.description), resources }))
+  res
+    .status(201)
+    .json(
+      await createCompanyRole(currentUser.companyId, {
+        name,
+        description: normalizeNullableText(req.body.description),
+        resources,
+      }),
+    )
 })
 
 router.put('/roles/:id', requireAuth, async (req, res) => {
-  if (!UUID_PATTERN.test(req.params.id)) { res.status(400).json({ error: 'Role inválida' }); return }
+  if (!UUID_PATTERN.test(req.params.id)) {
+    res.status(400).json({ error: 'Role inválida' })
+    return
+  }
   const currentUser = await requireRoleRootUser(req, res)
   if (!currentUser) return
   const name = normalizeText(req.body.name)
   const resources = Array.isArray(req.body.resources)
-    ? req.body.resources.filter((key: unknown): key is ResourceKey => typeof key === 'string' && RESOURCE_KEYS.includes(key as ResourceKey))
+    ? req.body.resources.filter(
+        (key: unknown): key is ResourceKey =>
+          typeof key === 'string' && RESOURCE_KEYS.includes(key as ResourceKey),
+      )
     : []
-  if (!name || name.length > 100) { res.status(400).json({ error: 'Nome da role inválido' }); return }
+  if (!name || name.length > 100) {
+    res.status(400).json({ error: 'Nome da role inválido' })
+    return
+  }
   try {
-    res.json(await updateCompanyRole(currentUser.companyId, req.params.id, { name, description: normalizeNullableText(req.body.description), resources }))
+    res.json(
+      await updateCompanyRole(currentUser.companyId, req.params.id, {
+        name,
+        description: normalizeNullableText(req.body.description),
+        resources,
+      }),
+    )
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Não foi possível alterar a role' })
+    res
+      .status(400)
+      .json({ error: error instanceof Error ? error.message : 'Não foi possível alterar a role' })
   }
 })
 
 router.delete('/roles/:id', requireAuth, async (req, res) => {
-  if (!UUID_PATTERN.test(req.params.id)) { res.status(400).json({ error: 'Role inválida' }); return }
+  if (!UUID_PATTERN.test(req.params.id)) {
+    res.status(400).json({ error: 'Role inválida' })
+    return
+  }
   const currentUser = await requireRoleRootUser(req, res)
   if (!currentUser) return
   try {
     await deleteCompanyRole(currentUser.companyId, req.params.id)
     res.status(204).send()
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Não foi possível excluir a role' })
+    res
+      .status(400)
+      .json({ error: error instanceof Error ? error.message : 'Não foi possível excluir a role' })
   }
 })
 
@@ -697,7 +743,9 @@ router.post('/clients', requireAuth, async (req, res) => {
   try {
     applyClientProfileInput(client, req.body)
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Dados do cliente inválidos' })
+    res
+      .status(400)
+      .json({ error: error instanceof Error ? error.message : 'Dados do cliente inválidos' })
     return
   }
   res.status(201).json(await repository.save(client))
@@ -729,7 +777,9 @@ router.put('/clients/:id', requireAuth, async (req, res) => {
   try {
     applyClientProfileInput(client, req.body)
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Dados do cliente inválidos' })
+    res
+      .status(400)
+      .json({ error: error instanceof Error ? error.message : 'Dados do cliente inválidos' })
     return
   }
   res.json(await repository.save(client))

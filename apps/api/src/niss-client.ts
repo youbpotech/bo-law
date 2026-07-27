@@ -47,10 +47,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new Error('Não foi possível conectar à API do BotNiss.')
   }
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as
-      | { erro?: string; detalhes?: string[] }
-      | null
-    throw new Error(body?.detalhes?.join(' ') || body?.erro || `BotNiss recusou a operação (${response.status}).`)
+    const body = (await response.json().catch(() => null)) as {
+      erro?: string
+      detalhes?: string[]
+    } | null
+    throw new Error(
+      body?.detalhes?.join(' ') || body?.erro || `BotNiss recusou a operação (${response.status}).`,
+    )
   }
   return response.json() as Promise<T>
 }
@@ -82,15 +85,54 @@ export async function getNissDocuments(id: string): Promise<NissDocument[]> {
   }))
 }
 
-export async function downloadNissDocument(url: string): Promise<Buffer> {
+export type NissDocumentDownload = {
+  data: Buffer
+  fileName: string
+  mimeType: string
+}
+
+export function fileNameFromContentDisposition(value: string | null): string | null {
+  if (!value) return null
+  const encoded = value.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim())
+    } catch {
+      // Continua para filename quando o valor estendido for inválido.
+    }
+  }
+  return (
+    value.match(/filename\s*=\s*"([^"]+)"/i)?.[1] ??
+    value.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim() ??
+    null
+  )
+}
+
+export async function downloadNissDocument(
+  id: string,
+  fileName: string,
+): Promise<NissDocumentDownload> {
+  const { baseUrl, apiKey } = configuration()
   let response: Response
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    response = await fetch(
+      `${baseUrl}/api/v1/processos/${encodeURIComponent(id)}/documentos/${encodeURIComponent(fileName)}`,
+      {
+        signal: AbortSignal.timeout(30_000),
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+    )
   } catch {
     throw new Error('Não foi possível baixar um dos documentos do BotNiss.')
   }
-  if (!response.ok) throw new Error(`Não foi possível baixar um dos documentos (${response.status}).`)
-  return Buffer.from(await response.arrayBuffer())
+  if (!response.ok)
+    throw new Error(`Não foi possível baixar um dos documentos (${response.status}).`)
+  return {
+    data: Buffer.from(await response.arrayBuffer()),
+    fileName:
+      fileNameFromContentDisposition(response.headers.get('content-disposition')) || fileName,
+    mimeType: response.headers.get('content-type') || 'application/octet-stream',
+  }
 }
 
 function text(value: unknown): string {
@@ -141,7 +183,9 @@ export function mapNissProcess(row: BotNissRow): NissProcess {
 export async function listNissProcesses(): Promise<NissProcess[]> {
   const rows: BotNissRow[] = []
   for (let offset = 0; offset < 10_000; offset += 100) {
-    const page = await request<{ dados: BotNissRow[] }>(`/api/v1/processos?limite=100&offset=${offset}`)
+    const page = await request<{ dados: BotNissRow[] }>(
+      `/api/v1/processos?limite=100&offset=${offset}`,
+    )
     rows.push(...page.dados)
     if (page.dados.length < 100) break
   }
