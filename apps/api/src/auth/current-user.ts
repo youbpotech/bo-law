@@ -2,12 +2,7 @@ import { Request, Response } from 'express'
 import { AppDataSource } from '../data-source'
 import { Company } from '../entities/Company'
 import { User } from '../entities/User'
-import {
-  getTokenPermissions,
-  isPlatformRoot,
-  type ResourceKey,
-  verifyAuthToken,
-} from './token'
+import { getTokenPermissions, isPlatformRoot, type ResourceKey, verifyAuthToken } from './token'
 
 export async function getAuthPayload(req: Request) {
   const authorization = req.header('authorization')
@@ -47,8 +42,7 @@ export async function getCurrentUser(req: Request): Promise<User | null> {
     ? [...new Set([...getTokenPermissions(payload), 'companies'])]
     : getTokenPermissions(payload)
   user.roleRoot =
-    platformRoot ||
-    (payload.realm_access?.roles?.includes(`company-${company.id}-root`) ?? false)
+    platformRoot || (payload.realm_access?.roles?.includes(`company-${company.id}-root`) ?? false)
   return user
 }
 
@@ -112,6 +106,10 @@ export function serializeCurrentUser(user: User) {
           hasFavicon: Boolean(user.company.faviconMimeType),
           faviconUrl: user.company.faviconMimeType
             ? `/api/branding/companies/${user.company.id}/favicon?v=${user.company.updatedAt.getTime()}`
+            : null,
+          hasLoginBanner: Boolean(user.company.loginBannerMimeType),
+          loginBannerUrl: user.company.loginBannerMimeType
+            ? `/api/branding/companies/${user.company.id}/login-banner?v=${user.company.updatedAt.getTime()}`
             : null,
           whatsappNumber: user.company.whatsappNumber,
           dashboardConfig: user.company.dashboardConfig,

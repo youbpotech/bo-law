@@ -1,14 +1,12 @@
 import { ref, watch } from 'vue'
 import { isBrandTheme, type BrandTheme } from '@/lib/company-themes'
+import { getLastSession } from '@/lib/last-session'
+import { COLOR_THEMES, type ColorTheme } from '@/lib/color-theme'
 
-type Theme = 'light' | 'dark' | 'system'
-
-const theme = ref<Theme>('system')
+const theme = ref<ColorTheme>('system')
 const systemTheme = ref<'light' | 'dark'>('light')
 const brandTheme = ref<BrandTheme>('default')
 const isInitialized = ref(false)
-
-const colorThemes: Theme[] = ['light', 'dark', 'system']
 
 const getMediaQuery = () => {
   if (typeof window === 'undefined') return null
@@ -26,7 +24,7 @@ export function useTheme() {
     }
   }
 
-  const setTheme = (newTheme: Theme) => {
+  const setTheme = (newTheme: ColorTheme) => {
     theme.value = newTheme
   }
 
@@ -50,7 +48,7 @@ export function useTheme() {
   watch(
     [theme, systemTheme, brandTheme],
     () => {
-      if (typeof document === 'undefined' || typeof localStorage === 'undefined') return
+      if (typeof document === 'undefined') return
 
       const effectiveTheme = getEffectiveTheme()
       const root = document.documentElement
@@ -62,9 +60,6 @@ export function useTheme() {
       }
 
       root.dataset.theme = brandTheme.value
-
-      // Store theme preference in localStorage
-      localStorage.setItem('theme', theme.value)
     },
     { immediate: true },
   )
@@ -76,11 +71,10 @@ export function useTheme() {
 
   // Initialize theme from localStorage or system preference
   const initializeTheme = () => {
-    if (isInitialized.value || typeof localStorage === 'undefined') return
+    if (isInitialized.value) return
 
-    const savedTheme = localStorage.getItem('theme') as Theme
-
-    if (savedTheme && colorThemes.includes(savedTheme)) {
+    const savedTheme = getLastSession()?.colorTheme
+    if (savedTheme && COLOR_THEMES.includes(savedTheme)) {
       theme.value = savedTheme
     } else {
       theme.value = 'system'

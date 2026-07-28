@@ -27,6 +27,7 @@ import { geographyRouter } from './geography'
 import { parseCompanyLogo } from '../company-logo'
 import { applyClientProfileInput } from '../client-profile'
 import { parseCompanyFavicon } from '../company-favicon'
+import { parseCompanyBanner } from '../company-banner'
 import {
   createCompanyRole,
   createKeycloakUser,
@@ -78,6 +79,10 @@ function serializeCompany(company: Company) {
     faviconUrl: company.faviconMimeType
       ? `/api/branding/companies/${company.id}/favicon?v=${company.updatedAt.getTime()}`
       : null,
+    hasLoginBanner: Boolean(company.loginBannerMimeType),
+    loginBannerUrl: company.loginBannerMimeType
+      ? `/api/branding/companies/${company.id}/login-banner?v=${company.updatedAt.getTime()}`
+      : null,
     whatsappNumber: company.whatsappNumber,
     dashboardConfig: normalizeDashboardConfig(company.dashboardConfig),
     createdAt: company.createdAt,
@@ -126,6 +131,9 @@ router.get('/branding/companies/:id', async (req, res) => {
     logoUrl: company.logoMimeType ? `/api/branding/companies/${company.id}/logo` : null,
     faviconUrl: company.faviconMimeType
       ? `/api/branding/companies/${company.id}/favicon?v=${company.updatedAt.getTime()}`
+      : null,
+    loginBannerUrl: company.loginBannerMimeType
+      ? `/api/branding/companies/${company.id}/login-banner?v=${company.updatedAt.getTime()}`
       : null,
   })
 })
@@ -200,6 +208,26 @@ router.get('/branding/companies/:id/favicon', async (req, res) => {
   res.setHeader('Content-Type', company.faviconMimeType)
   res.setHeader('Cache-Control', 'public, max-age=86400')
   res.send(company.favicon)
+})
+
+router.get('/branding/companies/:id/login-banner', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Empresa inválida' })
+    return
+  }
+  const company = await AppDataSource.getRepository(Company)
+    .createQueryBuilder('company')
+    .addSelect('company.loginBanner')
+    .where('company.id = :id', { id })
+    .getOne()
+  if (!company?.loginBanner || !company.loginBannerMimeType) {
+    res.status(404).json({ error: 'Banner de login não encontrado' })
+    return
+  }
+  res.setHeader('Content-Type', company.loginBannerMimeType)
+  res.setHeader('Cache-Control', 'public, max-age=86400')
+  res.send(company.loginBanner)
 })
 
 router.post('/auth/login', async (req, res) => {
@@ -306,9 +334,11 @@ router.post('/companies', requireAuth, async (req, res) => {
   }
   let logo
   let favicon
+  let loginBanner
   try {
     logo = parseCompanyLogo(req.body.logoDataUrl)
     favicon = parseCompanyFavicon(req.body.faviconDataUrl)
+    loginBanner = parseCompanyBanner(req.body.loginBannerDataUrl)
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : 'Logomarca inválida' })
     return
@@ -320,6 +350,8 @@ router.post('/companies', requireAuth, async (req, res) => {
     logoMimeType: logo?.mimeType ?? null,
     favicon: favicon?.data ?? null,
     faviconMimeType: favicon?.mimeType ?? null,
+    loginBanner: loginBanner?.data ?? null,
+    loginBannerMimeType: loginBanner?.mimeType ?? null,
     whatsappNumber: normalizeWhatsappNumber(req.body.whatsappNumber),
     dashboardConfig: req.body.dashboardConfig
       ? normalizeDashboardConfig(req.body.dashboardConfig)
@@ -370,6 +402,11 @@ router.put('/companies/:id', requireAuth, async (req, res) => {
     if (favicon !== undefined) {
       company.favicon = favicon?.data ?? null
       company.faviconMimeType = favicon?.mimeType ?? null
+    }
+    const loginBanner = parseCompanyBanner(req.body.loginBannerDataUrl)
+    if (loginBanner !== undefined) {
+      company.loginBanner = loginBanner?.data ?? null
+      company.loginBannerMimeType = loginBanner?.mimeType ?? null
     }
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : 'Logomarca inválida' })
@@ -633,15 +670,13 @@ router.post('/roles', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Nome da role é obrigatório e deve ter até 100 caracteres' })
     return
   }
-  res
-    .status(201)
-    .json(
-      await createCompanyRole(currentUser.companyId, {
-        name,
-        description: normalizeNullableText(req.body.description),
-        resources,
-      }),
-    )
+  res.status(201).json(
+    await createCompanyRole(currentUser.companyId, {
+      name,
+      description: normalizeNullableText(req.body.description),
+      resources,
+    }),
+  )
 })
 
 router.put('/roles/:id', requireAuth, async (req, res) => {

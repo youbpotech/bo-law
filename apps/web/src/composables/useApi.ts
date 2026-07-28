@@ -26,6 +26,8 @@ export interface Company {
   logoUrl: string | null
   hasFavicon: boolean
   faviconUrl: string | null
+  hasLoginBanner: boolean
+  loginBannerUrl: string | null
   whatsappNumber?: string | null
   dashboardConfig: DashboardConfig
   createdAt: string
@@ -52,6 +54,10 @@ export interface Client {
   name: string
   surname?: string | null
   portugueseTaxId?: string | null
+  niss?: string | null
+  snsUserNumber?: string | null
+  arNumber?: string | null
+  citizenCardNumber?: string | null
   foreignTaxId?: string | null
   foreignTaxIdType?: string | null
   birthDate?: string | null
@@ -175,6 +181,7 @@ export interface CompanyInput {
   theme: string
   logoDataUrl?: string | null
   faviconDataUrl?: string | null
+  loginBannerDataUrl?: string | null
   whatsappNumber?: string | null
   dashboardConfig?: DashboardConfig
 }

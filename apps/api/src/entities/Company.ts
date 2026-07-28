@@ -55,6 +55,12 @@ export class Company {
   @Column({ name: 'favicon_mime_type', type: 'varchar', length: 30, nullable: true })
   faviconMimeType!: string | null
 
+  @Column({ name: 'banner_login', type: 'bytea', nullable: true, select: false })
+  loginBanner!: Buffer | null
+
+  @Column({ name: 'banner_login_mime_type', type: 'varchar', length: 30, nullable: true })
+  loginBannerMimeType!: string | null
+
   @Column({ name: 'whatsapp_number', type: 'varchar', length: 40, nullable: true })
   whatsappNumber!: string | null
 

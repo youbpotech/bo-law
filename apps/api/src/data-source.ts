@@ -15,6 +15,8 @@ import { ExpandClientProfile1784851200000 } from './migrations/1784851200000-Exp
 import { AddKeycloakIdentity1784937600000 } from './migrations/1784937600000-AddKeycloakIdentity'
 import { AddCompanyFavicon1785024000000 } from './migrations/1785024000000-AddCompanyFavicon'
 import { AddGeographyReferences1785110400000 } from './migrations/1785110400000-AddGeographyReferences'
+import { AddClientPortugueseIdentifiers1785196800000 } from './migrations/1785196800000-AddClientPortugueseIdentifiers'
+import { AddCompanyLoginBanner1785283200000 } from './migrations/1785283200000-AddCompanyLoginBanner'
 
 config()
 
@@ -51,6 +53,8 @@ export const AppDataSource = new DataSource({
     AddKeycloakIdentity1784937600000,
     AddCompanyFavicon1785024000000,
     AddGeographyReferences1785110400000,
+    AddClientPortugueseIdentifiers1785196800000,
+    AddCompanyLoginBanner1785283200000,
   ],
   subscribers: [],
 })
