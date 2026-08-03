@@ -86,8 +86,22 @@ BOTNISS_API_KEY=uma_chave_aleatoria_com_pelo_menos_32_caracteres
 
 O `bo-law` apenas consome essa API. O BotNiss permanece um serviço independente e não é alterado por este projeto.
 
+### Acompanhamento de processos AIMA
+
+O menu `Processos AIMA` consome a API independente do BotAIMA e associa cada URL de
+tracking ao cliente da empresa atual. Configure a URL e a chave da API:
+
+```dotenv
+BOTAIMA_API_URL=http://host.docker.internal:3000
+BOTAIMA_API_KEY=uma_chave_aleatoria_com_pelo_menos_32_caracteres
+```
+
+No desenvolvimento local, use `http://localhost:3000`. A API do backoffice mantém a
+chave do BotAIMA no servidor, valida o cliente/tenant antes de expor dossiês e documentos
+e disponibiliza criação, consulta, reprocessamento e download dos snapshots retornados.
+
 O Keycloak contém as roles técnicas `dashboard`, `users`, `roles`, `clients`, `companies`,
-`leads` e `cases`. O backoffice permite que usuários Root criem roles compostas por empresa
+`leads`, `cases`, `niss` e `aima`. O backoffice permite que usuários Root criem roles compostas por empresa
 e as associem aos usuários. O mesmo acesso controla a visibilidade do menu e as respectivas
 rotas da API; ocultar o menu não é usado como única barreira de segurança.
 
@@ -120,6 +134,66 @@ o envio manual permanece disponível em modo de desenvolvimento com SID simulado
 Para desenvolvimento local sem callbacks reais da Twilio, desative a validação de assinatura
 explicitamente. Preencha `LEADS_DEFAULT_COMPANY_ID` apenas em instalações de empresa única;
 em ambientes multiempresa, mantenha-o vazio e configure o WhatsApp de cada empresa.
+
+## Notificações omnichannel
+
+O módulo `apps/api/src/notifications` recebe um conjunto de canais por notificação. Os
+canais iniciais são `email`, `whatsapp` e `internal`; valores repetidos são eliminados
+pelo `Set`. Cada canal gera uma entrega independente, com estado, número de tentativas,
+identificador do provedor e último erro. Falhas transitórias são retomadas pelo worker.
+
+Serviços da aplicação devem solicitar notificações pela função `notify`:
+
+```ts
+await notify({
+  companyId,
+  createdByUserId,
+  recipient: {
+    userId,
+    email: 'destinatario@example.com',
+    phone: '+351912345678',
+  },
+  channels: new Set(['internal', 'email', 'whatsapp']),
+  title: 'Documento disponível',
+  body: 'O documento solicitado já está disponível.',
+  metadata: { documentId },
+})
+```
+
+`userId` é obrigatório para o canal interno. O email pode ser informado diretamente ou
+obtido do usuário. O telefone deve ser informado para WhatsApp. O adapter de WhatsApp
+reutiliza o transporte Twilio dos leads, sem alterar conversas ou webhooks existentes.
+
+Para habilitar email real em produção, configure:
+
+```env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASSWORD=
+NOTIFICATION_EMAIL_FROM=Backoffice <nao-responder@example.com>
+NOTIFICATION_WORKER_POLL_MS=3000
+NOTIFICATION_MAX_ATTEMPTS=5
+```
+
+O `.env.example` também mantém o contrato reservado ao futuro canal SMS
+(`SMS_PROVIDER`, `SMS_API_BASE_URL`, `SMS_API_KEY`, `SMS_API_SECRET` e `SMS_FROM`).
+Essas variáveis somente serão consumidas quando o respectivo adapter for implementado.
+
+As notificações internas do usuário autenticado estão disponíveis em
+`GET /api/notifications`. Use `PATCH /api/notifications/:id/read` para marcar uma
+notificação como lida e `PATCH /api/notifications/read-all` para marcar todas.
+No cabeçalho, o botão de notificações ao lado do seletor de tema exibe a quantidade
+pendente e abre o inbox flutuante. O botão com polegar registra a ciência do usuário
+utilizando a rota individual de leitura.
+
+Quando a empresa não possui banner de login ou logomarca próprios, o frontend utiliza
+os assets versionados em `apps/web/public/branding`. As imagens personalizadas continuam
+armazenadas por empresa e sempre têm precedência sobre esses padrões.
+
+Um canal futuro, como SMS, é incluído implementando `NotificationChannelAdapter`,
+registrando o adapter na factory e acrescentando o identificador do canal ao contrato.
 
 ## Verificação
 

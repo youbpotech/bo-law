@@ -6,6 +6,7 @@ import { config } from 'dotenv'
 import { AppDataSource } from './data-source'
 import routes from './routes'
 import { startLeadAudioWorker } from './leads/audio-service'
+import { startNotificationWorker } from './notifications/worker'
 
 config()
 
@@ -40,13 +41,14 @@ AppDataSource.initialize()
     console.log('✅ Conexão com PostgreSQL estabelecida')
 
     const stopAudioWorker = startLeadAudioWorker()
+    const stopNotificationWorker = startNotificationWorker()
     const server = app.listen(PORT, () => {
       console.log(`🚀 Servidor Express rodando na porta ${PORT}`)
       console.log(`📡 API disponível em http://localhost:${PORT}/api`)
     })
 
     const shutdown = async () => {
-      await stopAudioWorker()
+      await Promise.all([stopAudioWorker(), stopNotificationWorker()])
       server.close(async () => {
         await AppDataSource.destroy()
         process.exit(0)

@@ -243,7 +243,12 @@ async function saveClient(): Promise<void> {
     if (typeof route.query.returnTo === 'string') {
       await router.push({
         path: route.query.returnTo,
-        query: route.query.newNiss === '1' ? { newNiss: '1' } : {},
+        query:
+          route.query.newNiss === '1'
+            ? { newNiss: '1' }
+            : route.query.newAima === '1'
+              ? { newAima: '1' }
+              : {},
       })
     }
   } catch (caughtError) {

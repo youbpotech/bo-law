@@ -13,6 +13,12 @@ import {
 } from '@/lib/last-session'
 import { queryClient } from '@/lib/query-client'
 import { setBrowserFavicon } from '@/lib/favicon'
+import {
+  DEFAULT_COMPANY_LOGO_URL,
+  DEFAULT_LOGIN_BANNER_URL,
+  resolveCompanyLogoUrl,
+  resolveLoginBannerUrl,
+} from '@/lib/branding'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 const currentYear = new Date().getFullYear()
@@ -22,8 +28,8 @@ const password = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
 const companyName = ref<string | null>(null)
-const logoUrl = ref<string | null>(null)
-const loginBannerUrl = ref<string | null>(null)
+const logoUrl = ref(DEFAULT_COMPANY_LOGO_URL)
+const loginBannerUrl = ref(DEFAULT_LOGIN_BANNER_URL)
 const lastUserName = ref<string | null>(null)
 const { theme, setTheme, setBrandThemeFromCompany } = useTheme()
 const router = useRouter()
@@ -32,8 +38,8 @@ let brandingRequestId = 0
 
 function resetBranding(): void {
   companyName.value = null
-  logoUrl.value = null
-  loginBannerUrl.value = null
+  logoUrl.value = DEFAULT_COMPANY_LOGO_URL
+  loginBannerUrl.value = DEFAULT_LOGIN_BANNER_URL
   setBrandThemeFromCompany('default')
   setBrowserFavicon()
 }
@@ -61,10 +67,12 @@ async function applyUserSession(session: LastSession | null): Promise<void> {
     }
     if (requestId !== brandingRequestId) return
     companyName.value = company.name
-    logoUrl.value = company.logoUrl ? `${API_BASE_URL}${company.logoUrl}` : null
+    logoUrl.value = company.logoUrl
+      ? `${API_BASE_URL}${company.logoUrl}`
+      : resolveCompanyLogoUrl()
     loginBannerUrl.value = company.loginBannerUrl
       ? `${API_BASE_URL}${company.loginBannerUrl}`
-      : null
+      : resolveLoginBannerUrl()
     setBrandThemeFromCompany(company.theme)
     setBrowserFavicon(company.faviconUrl ? `${API_BASE_URL}${company.faviconUrl}` : null)
   } catch {
@@ -133,7 +141,6 @@ async function handleLogin(): Promise<void> {
   <div class="min-h-screen bg-muted/40 md:grid md:grid-cols-[minmax(0,3fr)_minmax(400px,2fr)]">
     <div class="relative min-h-56 overflow-hidden bg-primary/10 md:min-h-screen">
       <img
-        v-if="loginBannerUrl"
         :src="loginBannerUrl"
         :alt="companyName ? `Banner de ${companyName}` : 'Banner da empresa'"
         class="absolute inset-0 h-full w-full object-cover"
@@ -146,7 +153,6 @@ async function handleLogin(): Promise<void> {
           class="w-full overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm"
         >
           <div
-            v-if="logoUrl"
             class="flex min-h-24 items-center justify-center border-b bg-background p-4"
           >
             <img

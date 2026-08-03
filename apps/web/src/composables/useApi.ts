@@ -119,6 +119,7 @@ export type ResourceKey =
   | 'leads'
   | 'cases'
   | 'niss'
+  | 'aima'
 
 export interface NissProcess {
   id: string
@@ -138,6 +139,44 @@ export interface NissProcess {
   createdAt: string
   updatedAt: string
   client: Client
+}
+
+export interface AimaProcess {
+  id: string
+  clientId: string
+  trackingUrl: string
+  processNumber: string | null
+  titleNumber: string | null
+  hashProcess: string | null
+  operationalStatus: number
+  operationalStatusName: 'A_CONSULTAR' | 'EM_CURSO' | 'BLOQUEADA' | 'CONCLUIDA'
+  attempts: number
+  nextConsultationAt: string | null
+  processingStartedAt: string | null
+  lastAttemptAt: string | null
+  denialReason: string | null
+  currentState: string | null
+  currentGuidance: string | null
+  requestInformationDate: string | null
+  executionStatus: string | null
+  lastPortalConsultationAt: string | null
+  createdAt: string
+  updatedAt: string
+  client: Client
+}
+
+export interface AimaInput {
+  clientId: string
+  trackingUrl: string
+}
+
+export interface AimaDocument {
+  id: string
+  fileName: string
+  mimeType: string | null
+  documentType: string | null
+  documentTypeDescription: string | null
+  documentDate: string | null
 }
 
 export interface NissInput {
@@ -243,6 +282,8 @@ export function useSession() {
         'cases',
         'dashboard',
         'niss',
+        'aima',
+        'notifications',
       ])
       await queryClient.cancelQueries({
         predicate: (query) => tenantKeys.has(String(query.queryKey[0])),
@@ -627,5 +668,89 @@ export function useNiss() {
     isLoadingDocuments: documentListMutation.isPending,
     isDownloadingDocument: singleDocMutation.isPending,
     refresh: nissQuery.refetch,
+  }
+}
+
+async function buscarAima(): Promise<AimaProcess[]> {
+  return authRequest<AimaProcess[]>('/api/aima')
+}
+
+async function criarAima(dados: AimaInput): Promise<AimaProcess> {
+  return authRequest<AimaProcess>('/api/aima', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  })
+}
+
+async function buscarDossieAima(id: string): Promise<Record<string, unknown>> {
+  return authRequest<Record<string, unknown>>(`/api/aima/${encodeURIComponent(id)}/dossier`)
+}
+
+async function buscarDocumentosAima(id: string): Promise<AimaDocument[]> {
+  return authRequest<AimaDocument[]>(`/api/aima/${encodeURIComponent(id)}/documents`)
+}
+
+export type AimaDocumentDownload = {
+  blob: Blob
+  fileName: string
+}
+
+async function baixarDocumentoAima({
+  processId,
+  fileName,
+}: {
+  processId: string
+  fileName: string
+}): Promise<AimaDocumentDownload> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/aima/${encodeURIComponent(processId)}/documents/${encodeURIComponent(fileName)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${getAuthToken() ?? ''}`,
+        ...(getActiveCompanyId() ? { 'X-Company-Id': String(getActiveCompanyId()) } : {}),
+      },
+    },
+  )
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error ?? 'Não foi possível baixar o documento AIMA.')
+  }
+  return { blob: await response.blob(), fileName: downloadFileName(response, fileName) }
+}
+
+async function reprocessarAima(id: string): Promise<AimaProcess> {
+  return authRequest<AimaProcess>(`/api/aima/${encodeURIComponent(id)}/reprocess`, { method: 'POST' })
+}
+
+export function useAima() {
+  const queryClient = useQueryClient()
+  const aimaQuery = useQuery({ queryKey: ['aima'], queryFn: buscarAima })
+  const createMutation = useMutation({
+    mutationFn: criarAima,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aima'] }),
+  })
+  const dossierMutation = useMutation({ mutationFn: buscarDossieAima })
+  const documentListMutation = useMutation({ mutationFn: buscarDocumentosAima })
+  const singleDocMutation = useMutation({ mutationFn: baixarDocumentoAima })
+  const reprocessMutation = useMutation({
+    mutationFn: reprocessarAima,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aima'] }),
+  })
+  return {
+    processes: computed(() => aimaQuery.data.value || []),
+    isLoading: aimaQuery.isLoading,
+    error: aimaQuery.error,
+    criarAima: createMutation.mutateAsync,
+    buscarDossie: dossierMutation.mutateAsync,
+    buscarDocumentos: documentListMutation.mutateAsync,
+    baixarDocumento: singleDocMutation.mutateAsync,
+    reprocessar: reprocessMutation.mutateAsync,
+    isCreating: createMutation.isPending,
+    isLoadingDossier: dossierMutation.isPending,
+    isLoadingDocuments: documentListMutation.isPending,
+    isDownloadingDocument: singleDocMutation.isPending,
+    isReprocessing: reprocessMutation.isPending,
+    refresh: aimaQuery.refetch,
   }
 }

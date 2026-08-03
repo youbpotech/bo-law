@@ -29,6 +29,7 @@ import NissDossierModal from '@/components/NissDossierModal.vue'
 import NissDocumentsModal from '@/components/NissDocumentsModal.vue'
 import NissCitizenDetailsModal from '@/components/NissCitizenDetailsModal.vue'
 import { useClients, useNiss, useSession, type Client, type NissInput, type NissDocument } from '@/composables/useApi'
+import { resolveCompanyLogoUrl } from '@/lib/branding'
 
 const route = useRoute()
 const router = useRouter()
@@ -394,7 +395,7 @@ onUnmounted(() => {
     :dossier="dossier"
     :is-loading="isLoadingDossier"
     :error="dossierError"
-    :logo-url="currentUser?.company?.logoUrl ?? null"
+    :logo-url="resolveCompanyLogoUrl(currentUser?.company?.logoUrl)"
     :company-name="currentUser?.company?.name ?? ''"
     @update:open="(v) => !v && (isDossierOpen = false)"
   />

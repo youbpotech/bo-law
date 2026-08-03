@@ -8,6 +8,8 @@ import { Lead } from './entities/Lead'
 import { LeadAudioProcessing } from './entities/LeadAudioProcessing'
 import { LeadMessage } from './entities/LeadMessage'
 import { LegalCase } from './entities/LegalCase'
+import { Notification } from './entities/Notification'
+import { NotificationDelivery } from './entities/NotificationDelivery'
 import { User } from './entities/User'
 import { CreateLegalBackoffice1784678400000 } from './migrations/1784678400000-CreateLegalBackoffice'
 import { AddCompanyLogo1784764800000 } from './migrations/1784764800000-AddCompanyLogo'
@@ -17,6 +19,7 @@ import { AddCompanyFavicon1785024000000 } from './migrations/1785024000000-AddCo
 import { AddGeographyReferences1785110400000 } from './migrations/1785110400000-AddGeographyReferences'
 import { AddClientPortugueseIdentifiers1785196800000 } from './migrations/1785196800000-AddClientPortugueseIdentifiers'
 import { AddCompanyLoginBanner1785283200000 } from './migrations/1785283200000-AddCompanyLoginBanner'
+import { AddOmnichannelNotifications1785369600000 } from './migrations/1785369600000-AddOmnichannelNotifications'
 
 config()
 
@@ -45,7 +48,18 @@ export const AppDataSource = new DataSource({
       }),
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
-  entities: [User, Company, Client, Lead, LeadMessage, LeadAudioProcessing, LegalCase, Invoice],
+  entities: [
+    User,
+    Company,
+    Client,
+    Lead,
+    LeadMessage,
+    LeadAudioProcessing,
+    LegalCase,
+    Invoice,
+    Notification,
+    NotificationDelivery,
+  ],
   migrations: [
     CreateLegalBackoffice1784678400000,
     AddCompanyLogo1784764800000,
@@ -55,6 +69,7 @@ export const AppDataSource = new DataSource({
     AddGeographyReferences1785110400000,
     AddClientPortugueseIdentifiers1785196800000,
     AddCompanyLoginBanner1785283200000,
+    AddOmnichannelNotifications1785369600000,
   ],
   subscribers: [],
 })

@@ -41,7 +41,8 @@
     "companies": "Empresas",
     "leads": "Leads",
     "cases": "Processos",
-    "niss": "Pedidos NISS"
+    "niss": "Pedidos NISS",
+    "aima": "Processos AIMA"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -264,6 +265,16 @@
     "system": "Usar tema do sistema (atual: {theme})",
     "darkLabel": "escuro",
     "lightLabel": "claro"
+  },
+  "notifications": {
+    "title": "Notificações",
+    "openInbox": "Abrir notificações",
+    "unreadCount": "{count} não lida | {count} não lidas",
+    "empty": "Nenhuma notificação.",
+    "acknowledge": "Dar ciência",
+    "acknowledged": "Ciente",
+    "refresh": "Atualizar notificações",
+    "loadError": "Não foi possível carregar as notificações."
   },
   "profile": {
     "title": "Perfil",

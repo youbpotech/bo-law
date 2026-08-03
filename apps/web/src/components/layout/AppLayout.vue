@@ -83,6 +83,7 @@
           <div class="flex items-center space-x-2">
             <LanguageSelector v-if="false" />
             <ThemeToggle />
+            <NotificationInbox />
             <DropdownMenu v-model="isProfileMenuOpen" align="end">
               <template #trigger="{ toggle }">
                 <Button
@@ -169,6 +170,7 @@ import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
 import Button from '@/components/ui/Button.vue'
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
+import NotificationInbox from '@/components/NotificationInbox.vue'
 import LanguageSelector from '@/components/ui/LanguageSelector.vue'
 import Breadcrumb from '@/components/ui/Breadcrumb.vue'
 import BreadcrumbItem from '@/components/ui/BreadcrumbItem.vue'
@@ -183,6 +185,7 @@ import { useTheme } from '@/composables/useTheme'
 import { getSessionForUsername, rememberLastSession } from '@/lib/last-session'
 import { setBrowserFavicon } from '@/lib/favicon'
 import SocialSecurityIcon from '@/components/icons/SocialSecurityIcon.vue'
+import AimaFaviconIcon from '@/components/icons/AimaFaviconIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -322,6 +325,9 @@ const navigationItems = computed(() =>
       : []),
     ...(hasPermission('cases')
       ? [{ name: t('navigation.cases'), href: '/cases', icon: Scale }]
+      : []),
+    ...(hasPermission('aima')
+      ? [{ name: t('navigation.aima'), href: '/aima', icon: AimaFaviconIcon }]
       : []),
     ...(hasPermission('niss')
       ? [{ name: t('navigation.niss'), href: '/niss', icon: SocialSecurityIcon }]

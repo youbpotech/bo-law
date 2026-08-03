@@ -23,11 +23,13 @@ import { normalizeWhatsappPhone } from '../leads/twilio-service'
 import { casesRouter } from './cases'
 import { dashboardRouter, normalizeDashboardConfig } from './dashboard'
 import { nissRouter } from './niss'
+import { aimaRouter } from './aima'
 import { geographyRouter } from './geography'
 import { parseCompanyLogo } from '../company-logo'
 import { applyClientProfileInput } from '../client-profile'
 import { parseCompanyFavicon } from '../company-favicon'
 import { parseCompanyBanner } from '../company-banner'
+import { notificationsRouter } from '../notifications/routes'
 import {
   createCompanyRole,
   createKeycloakUser,
@@ -640,12 +642,13 @@ router.get('/resources', requireAuth, async (req, res) => {
     leads: 'Leads',
     cases: 'Processos',
     niss: 'NISS',
+    aima: 'Processos AIMA',
   }
   res.json(
     RESOURCE_KEYS.map((key) => ({
       key,
       name: names[key],
-      kind: ['leads', 'cases', 'niss'].includes(key) ? 'process' : 'resource',
+      kind: ['leads', 'cases', 'niss', 'aima'].includes(key) ? 'process' : 'resource',
     })),
   )
 })
@@ -850,5 +853,7 @@ router.use(leadsRouter)
 router.use(casesRouter)
 router.use(dashboardRouter)
 router.use(nissRouter)
+router.use(aimaRouter)
+router.use(notificationsRouter)
 
 export default router

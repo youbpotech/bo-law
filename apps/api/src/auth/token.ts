@@ -9,6 +9,7 @@ export const RESOURCE_KEYS = [
   'leads',
   'cases',
   'niss',
+  'aima',
 ] as const
 export type ResourceKey = (typeof RESOURCE_KEYS)[number]
 

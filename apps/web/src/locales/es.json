@@ -41,7 +41,8 @@
     "companies": "Empresas",
     "leads": "Leads",
     "cases": "Procesos",
-    "niss": "Solicitudes NISS"
+    "niss": "Solicitudes NISS",
+    "aima": "Procesos AIMA"
   },
   "dashboard": {
     "title": "Panel de control",
@@ -264,6 +265,16 @@
     "system": "Usar tema del sistema (actual: {theme})",
     "darkLabel": "oscuro",
     "lightLabel": "claro"
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "openInbox": "Abrir notificaciones",
+    "unreadCount": "{count} sin leer | {count} sin leer",
+    "empty": "No hay notificaciones.",
+    "acknowledge": "Dar por enterado",
+    "acknowledged": "Enterado",
+    "refresh": "Actualizar notificaciones",
+    "loadError": "No fue posible cargar las notificaciones."
   },
   "profile": {
     "title": "Perfil",

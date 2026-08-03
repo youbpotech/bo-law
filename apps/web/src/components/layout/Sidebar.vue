@@ -50,6 +50,7 @@ import { type ClassValue } from 'clsx'
 import { cn } from '@/lib/utils'
 import { X } from 'lucide-vue-next'
 import { getAuthToken } from '@/lib/auth'
+import { DEFAULT_COMPANY_LOGO_URL } from '@/lib/branding'
 
 defineOptions({ name: 'AppSidebar' })
 
@@ -65,13 +66,13 @@ const props = withDefaults(defineProps<Props>(), {
   companyName: null,
 })
 
-const resolvedLogoUrl = ref<string | null>(null)
+const resolvedLogoUrl = ref<string | null>(DEFAULT_COMPANY_LOGO_URL)
 let objectUrl: string | null = null
 
 function clearObjectUrl(): void {
   if (objectUrl) URL.revokeObjectURL(objectUrl)
   objectUrl = null
-  resolvedLogoUrl.value = null
+  resolvedLogoUrl.value = DEFAULT_COMPANY_LOGO_URL
 }
 
 watch(

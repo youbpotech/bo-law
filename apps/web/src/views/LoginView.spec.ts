@@ -2,6 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { rememberLastSession } from '@/lib/last-session'
+import {
+  DEFAULT_COMPANY_LOGO_URL,
+  DEFAULT_LOGIN_BANNER_URL,
+} from '@/lib/branding'
 import LoginView from './LoginView.vue'
 
 vi.mock('vue-router', () => ({
@@ -58,6 +62,12 @@ describe('LoginView por utilizador lembrado', () => {
 
     expect(wrapper.text()).toContain('António Silva')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(wrapper.get(`img[src="${DEFAULT_LOGIN_BANNER_URL}"]`).attributes('src')).toBe(
+      DEFAULT_LOGIN_BANNER_URL,
+    )
+    expect(wrapper.get(`img[src="${DEFAULT_COMPANY_LOGO_URL}"]`).attributes('src')).toBe(
+      DEFAULT_COMPANY_LOGO_URL,
+    )
 
     await wrapper.get('#username').setValue(' MARIA ')
     await flushPromises()

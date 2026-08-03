@@ -41,7 +41,8 @@
     "companies": "Companies",
     "leads": "Leads",
     "cases": "Cases",
-    "niss": "NISS Requests"
+    "niss": "NISS Requests",
+    "aima": "AIMA Processes"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -264,6 +265,16 @@
     "system": "Use system theme (current: {theme})",
     "darkLabel": "dark",
     "lightLabel": "light"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "openInbox": "Open notifications",
+    "unreadCount": "{count} unread notification | {count} unread notifications",
+    "empty": "No notifications.",
+    "acknowledge": "Acknowledge",
+    "acknowledged": "Acknowledged",
+    "refresh": "Refresh notifications",
+    "loadError": "Could not load notifications."
   },
   "profile": {
     "title": "Profile",
