@@ -1,6 +1,6 @@
 export type AimaProcess = {
   id: string
-  clientId: string
+  sourceReference: string
   trackingUrl: string
   processNumber: string | null
   titleNumber: string | null
@@ -154,14 +154,20 @@ export async function listAimaProcesses(): Promise<AimaProcess[]> {
 export async function createAimaProcess(input: {
   companyId: number
   clientId: string
+  legalCaseId: string
   trackingUrl: string
 }): Promise<AimaProcess> {
   const row = await request<BotAimaRow>('/api/v1/processos', {
     method: 'POST',
     body: JSON.stringify({
-      id_referencia_origem: input.clientId,
+      id_referencia_origem: input.legalCaseId,
       url_processo_ar: input.trackingUrl,
-      metadados: { origem: 'bo-law', empresa_id: input.companyId, cliente_id: input.clientId },
+      metadados: {
+        origem: 'bo-law',
+        empresa_id: input.companyId,
+        cliente_id: input.clientId,
+        legal_case_id: input.legalCaseId,
+      },
     }),
   })
   return mapAimaProcess(row)
@@ -178,7 +184,7 @@ export async function reprocessAimaProcess(id: string): Promise<AimaProcess> {
 export function mapAimaProcess(row: BotAimaRow): AimaProcess {
   return {
     id: text(row.id_solicitacao),
-    clientId: text(row.id_referencia_origem),
+    sourceReference: text(row.id_referencia_origem),
     trackingUrl: text(row.url_processo_ar),
     processNumber: nullableText(row.numero_processo),
     titleNumber: nullableText(row.numero_titulo),

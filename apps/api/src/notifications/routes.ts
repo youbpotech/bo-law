@@ -3,8 +3,15 @@ import { AppDataSource } from '../data-source'
 import { Notification } from '../entities/Notification'
 import { requireAuth } from '../auth/middleware'
 import { requireCurrentUser } from '../auth/current-user'
+import { notificationChannelCatalog } from './catalog'
 
 export const notificationsRouter = Router()
+
+notificationsRouter.get('/notification-channels', requireAuth, async (req, res) => {
+  const user = await requireCurrentUser(req, res)
+  if (!user) return
+  res.json(notificationChannelCatalog(user.company))
+})
 
 notificationsRouter.get('/notifications', requireAuth, async (req, res) => {
   const user = await requireCurrentUser(req, res)
@@ -54,4 +61,3 @@ notificationsRouter.patch('/notifications/read-all', requireAuth, async (req, re
     .execute()
   res.status(204).send()
 })
-

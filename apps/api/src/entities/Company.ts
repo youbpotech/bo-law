@@ -10,6 +10,7 @@ import { Client } from './Client'
 import { LegalCase } from './LegalCase'
 import { Lead } from './Lead'
 import { User } from './User'
+import { ServiceType } from './ServiceType'
 
 export const DEFAULT_DASHBOARD_WIDGETS = [
   'totalLeads',
@@ -88,4 +89,7 @@ export class Company {
 
   @OneToMany(() => LegalCase, (legalCase) => legalCase.company)
   legalCases!: LegalCase[]
+
+  @OneToMany(() => ServiceType, (serviceType) => serviceType.company)
+  serviceTypes!: ServiceType[]
 }

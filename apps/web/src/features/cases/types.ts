@@ -34,13 +34,17 @@ export interface LegalCase {
   companyId: number
   leadId: string | null
   clientId: string
+  createdByUserId: string
+  caseType: 'general' | 'niss' | 'aima'
+  integrationStatus: 'not_applicable' | 'pending' | 'active' | 'failed' | 'completed'
   title: string
-  serviceType: string
+  serviceId: string
+  service?: { id: string; name: string; processType: 'general' | 'niss' | 'aima'; active: boolean }
   description: string | null
-  contractedFee: string | number
+  contractedFee: string | number | null
   stage: LegalCaseStage
   documentsComplete: boolean
-  contractSignedAt: string
+  contractSignedAt: string | null
   startedAt: string | null
   completedAt: string | null
   createdAt: string
@@ -48,22 +52,40 @@ export interface LegalCase {
   client?: Client | null
   lead?: Lead | null
   invoices?: Invoice[]
+  createdByUser?: Pick<import('@/composables/useApi').User, 'id' | 'name'> | null
+  stakeholders?: Array<{
+    legalCaseId: string
+    userId: string
+    role: 'creator' | 'stakeholder'
+    user: Pick<import('@/composables/useApi').User, 'id' | 'name'>
+  }>
+  integrations?: Array<{
+    id: string
+    provider: 'botniss' | 'botaima'
+    externalProcessId: string | null
+    externalReference: string
+    status: 'pending' | 'processing' | 'active' | 'failed' | 'completed'
+  }>
 }
 
 export interface CreateCaseInput {
   leadId?: string | null
   clientId: string
   title: string
-  serviceType: string
+  serviceId: string
   description?: string | null
   contractedFee: string
   contractSignedAt?: string | null
   dueAt?: string | null
+  stakeholderUserIds: string[]
 }
 
 export type UpdateCaseInput = Partial<
-  Pick<LegalCase, 'title' | 'serviceType' | 'description' | 'stage' | 'documentsComplete'>
->
+  Pick<LegalCase, 'title' | 'description' | 'stage' | 'documentsComplete'>
+> & {
+  serviceId?: string
+  stakeholderUserIds?: string[]
+}
 
 export interface UpdateInvoiceInput {
   status: InvoiceStatus

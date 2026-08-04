@@ -4,6 +4,36 @@ Este arquivo registra as mudanças relevantes do Backoffice Jurídico.
 
 ## [Não publicado]
 
+### Processos e notificações
+
+- Unificados processos gerais, NISS e AIMA no agregado canónico `LegalCase`, sempre
+  associado a uma empresa e a um cliente.
+- Adicionado o vínculo técnico `LegalCaseIntegration`, com reserva idempotente para
+  impedir duplicação de pedidos externos, validação imediata da referência devolvida e
+  sincronização monotónica dos estados retornados.
+- Adicionados stakeholders de processo, mantendo o criador obrigatório e permitindo
+  selecionar outros utilizadores da mesma empresa em todas as criações; a coluna do
+  criador também passa a ser obrigatória no banco.
+- Adicionadas preferências de canais por utilizador, com notificação interna por padrão e
+  validação da disponibilidade no momento de cada evento, recorrendo ao alerta interno
+  quando todos os canais externos preferidos estiverem indisponíveis.
+- Incluído SMS no catálogo suportado e na persistência, visível de forma esmaecida e
+  bloqueado para seleção ou entrega enquanto o adapter não estiver implementado.
+- Ajustado o contrato de origem de BotNiss e BotAIMA para receber diretamente o UUID do
+  `LegalCase`, mantendo o identificador do cliente apenas nos metadados.
+- Processos NISS negados permanecem ativos em diligências para análise, em vez de serem
+  encerrados como processos concluídos.
+- A edição de processos passa a atualizar os stakeholders adicionais, sem remover o
+  criador, e a listagem passa a expor o nome completo do cliente.
+- Adicionado acesso unificado aos documentos pelo processo e um atalho na listagem de
+  utilizadores para filtrar os documentos dos seus processos.
+- NISS passa a permitir reconsulta, usando o mesmo botão de refresh do AIMA.
+
+### Utilizadores
+
+- A abertura do modal de edição recupera as roles atuais do Keycloak antes de preencher
+  os controlos do formulário.
+
 ### Operação
 
 - Configurada a imagem `postgres:18-alpine` como banco inicial do projeto.

@@ -105,6 +105,8 @@ vi.mock('@/composables/useApi', async () => {
         },
       ]),
     }),
+    useServices: () => ({ services: ref([{ id: 'service-1', name: 'Nacionalidade portuguesa', processType: 'general', active: true }]) }),
+    useSession: () => ({ currentUser: ref(null) }),
   }
 })
 
@@ -183,7 +185,7 @@ describe('LeadsView jurídico', () => {
     expect(actions.convert).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Impugnação de despedimento — Ana Martins',
-        serviceType: 'Impugnação de despedimento',
+        serviceId: 'service-1',
         contractedFee: 2_500,
         clientId: 'client-1',
         description: 'Cliente pretende contestar o despedimento dentro do prazo legal.',

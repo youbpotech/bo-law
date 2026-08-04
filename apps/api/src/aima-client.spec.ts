@@ -5,7 +5,7 @@ describe('cliente BotAIMA', () => {
   it('mapeia o contrato snake_case da API para o modelo do backoffice', () => {
     const process = mapAimaProcess({
       id_solicitacao: '7',
-      id_referencia_origem: 'client-id',
+      id_referencia_origem: 'legal-case-id',
       url_processo_ar: 'https://contactenos.aima.gov.pt/tracking/uuid',
       numero_processo: 'AR-7',
       numero_titulo: null,
@@ -22,7 +22,7 @@ describe('cliente BotAIMA', () => {
 
     expect(process).toMatchObject({
       id: '7',
-      clientId: 'client-id',
+      sourceReference: 'legal-case-id',
       processNumber: 'AR-7',
       operationalStatus: 1,
       currentState: 'Em análise',

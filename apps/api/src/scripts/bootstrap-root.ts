@@ -1,6 +1,8 @@
 import { AppDataSource } from '../data-source'
 import { Company } from '../entities/Company'
 import { User } from '../entities/User'
+import { saveNotificationChannelPreferences } from '../notifications/preferences'
+import { UserNotificationChannel } from '../entities/UserNotificationChannel'
 import {
   assignPlatformRoot,
   createKeycloakUser,
@@ -39,7 +41,7 @@ async function bootstrapRoot(): Promise<void> {
     const rootRole = companyRootRoles.get(companyId)
     if (!rootRole) throw new Error('Role Root da empresa inicial não encontrada')
     if (!user) {
-      user = userRepository.create({ name, username, email: null, password: null, companyId, root: true, keycloakId: null })
+      user = userRepository.create({ name, username, email: null, phone: null, password: null, companyId, root: true, keycloakId: null })
     }
     if (!user.keycloakId) {
       user.keycloakId = await createKeycloakUser({ companyId, name, username, email: user.email, password, roleIds: [rootRole.id] })
@@ -56,7 +58,14 @@ async function bootstrapRoot(): Promise<void> {
     })
     await assignPlatformRoot(user.keycloakId)
     user.password = null
-    await userRepository.save(user)
+    await AppDataSource.transaction(async (manager) => {
+      const saved = await manager.getRepository(User).save(user)
+      if (
+        !(await manager.getRepository(UserNotificationChannel).existsBy({ userId: saved.id }))
+      ) {
+        await saveNotificationChannelPreferences(manager, saved.id, ['internal'])
+      }
+    })
     console.log(`Administrador sincronizado com o Keycloak para a empresa ${companyId}.`)
   } finally {
     await AppDataSource.destroy()

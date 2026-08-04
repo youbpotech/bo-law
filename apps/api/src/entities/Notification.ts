@@ -11,8 +11,9 @@ import {
 import { Company } from './Company'
 import { NotificationDelivery } from './NotificationDelivery'
 import { User } from './User'
+import { LegalCase } from './LegalCase'
 
-export const NOTIFICATION_CHANNELS = ['email', 'whatsapp', 'internal'] as const
+export const NOTIFICATION_CHANNELS = ['internal', 'email', 'whatsapp', 'sms'] as const
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number]
 export type NotificationStatus = 'pending' | 'sent' | 'partial' | 'failed'
 
@@ -29,6 +30,15 @@ export class Notification {
 
   @Column({ name: 'created_by_user_id', type: 'uuid', nullable: true })
   createdByUserId!: string | null
+
+  @Column({ name: 'legal_case_id', type: 'uuid', nullable: true })
+  legalCaseId!: string | null
+
+  @Column({ name: 'event_type', type: 'varchar', length: 100, nullable: true })
+  eventType!: string | null
+
+  @Column({ name: 'idempotency_key', type: 'varchar', length: 255, nullable: true })
+  idempotencyKey!: string | null
 
   @Column({ type: 'varchar', length: 255 })
   title!: string
@@ -65,6 +75,10 @@ export class Notification {
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'created_by_user_id' })
   createdByUser!: User | null
+
+  @ManyToOne(() => LegalCase, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'legal_case_id' })
+  legalCase!: LegalCase | null
 
   @OneToMany(() => NotificationDelivery, (delivery) => delivery.notification)
   deliveries!: NotificationDelivery[]

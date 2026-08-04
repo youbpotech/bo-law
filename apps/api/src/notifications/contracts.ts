@@ -35,4 +35,7 @@ export type NotifyInput = {
   body: string
   metadata?: Record<string, unknown>
   createdByUserId?: string | null
+  legalCaseId?: string | null
+  eventType?: string | null
+  idempotencyKey?: string | null
 }

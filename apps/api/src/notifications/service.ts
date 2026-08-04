@@ -32,7 +32,8 @@ function recipientForChannel(
     if (!email) throw new Error('O canal email exige um endereço de email')
     return email
   }
-  const phone = recipient.phone?.trim()
+  if (channel === 'sms') throw new Error('O canal SMS ainda não possui implementação')
+  const phone = recipient.phone?.trim() || user?.phone?.trim()
   if (!phone) throw new Error('O canal WhatsApp exige um número de telefone')
   return phone
 }
@@ -114,6 +115,11 @@ export async function dispatchNotification(notificationId: string): Promise<void
 
 export async function notify(input: NotifyInput): Promise<Notification> {
   const channels = toNotificationChannelSet(input.channels)
+  for (const channel of channels) {
+    if (!notificationChannelFactory.has(channel)) {
+      throw new Error(`O canal ${channel} ainda não possui implementação`)
+    }
+  }
   const title = normalizeRequiredText(input.title, 'Título')
   const body = normalizeRequiredText(input.body, 'Mensagem')
   if (title.length > 255) throw new Error('O título da notificação excede 255 caracteres')
@@ -144,6 +150,9 @@ export async function notify(input: NotifyInput): Promise<Notification> {
         companyId: input.companyId,
         recipientUserId: user?.id ?? null,
         createdByUserId: input.createdByUserId ?? null,
+        legalCaseId: input.legalCaseId ?? null,
+        eventType: input.eventType ?? null,
+        idempotencyKey: input.idempotencyKey ?? null,
         title,
         body,
         channels: [...channels],

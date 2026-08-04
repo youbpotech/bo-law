@@ -6,7 +6,7 @@ há motor de workflow nem entidade genérica de tarefa nesta primeira versão.
 | Lane | Entidade | Estado persistido |
 | --- | --- | --- |
 | Captação | `Lead` | `salesStage`, entrevista e reidratação |
-| Execução | `LegalCase` | `stage` e `documentsComplete` |
+| Execução | `LegalCase` | `caseType`, `stage` e `integrationStatus` |
 | Faturação | `Invoice` | `kind`, percentual e `status` |
 
 ## Captação
@@ -27,6 +27,33 @@ new -> interview_scheduled -> interview_completed -> contracted
 
 A conversão associa ou cria um `Client`, cria o `LegalCase` e solicita automaticamente a
 fatura parcial de 30%, tudo dentro do mesmo fluxo de negócio.
+
+## Identidade única de processo
+
+`LegalCase` é a entrada canónica de qualquer processo do sistema. `caseType` diferencia
+`general`, `niss` e `aima`, sem criar agregados concorrentes. Todo processo pertence a
+uma empresa e a um cliente. NISS e AIMA acrescentam um registo técnico em
+`LegalCaseIntegration`; o identificador de origem enviado ao bot é sempre o UUID do
+`LegalCase`, enquanto o cliente continua disponível nos metadados.
+
+A criação integrada é reservada localmente antes da chamada remota. Um token de
+processamento impede pedidos externos duplicados e permite retomar uma tentativa que
+tenha ficado abandonada. Os estados retornados pelos bots atualizam
+`integrationStatus`, sem permitir que respostas antigas regressem o estado. Um NISS
+`NEGADO` permanece em `diligences` e gera atenção; apenas `CONCLUIDO` fecha o processo.
+
+## Stakeholders e notificações
+
+Cada processo possui um ou mais `LegalCaseStakeholder`. O utilizador criador recebe o
+papel `creator`, é obrigatório e não pode ser removido da seleção; os demais recebem o
+papel `stakeholder`. Todos pertencem à empresa do processo.
+
+As preferências de canais pertencem ao utilizador, não ao tipo de processo. O catálogo
+suportado é `internal`, `email`, `whatsapp` e `sms`, com `internal` habilitado por padrão.
+Um evento consulta novamente a disponibilidade de cada canal antes de gerar as entregas.
+Se nenhum canal externo preferido estiver disponível, o alerta interno garante a
+notificação do participante. SMS permanece visível, mas indisponível, até à implementação
+do respetivo adapter.
 
 ## Execução e documentação
 

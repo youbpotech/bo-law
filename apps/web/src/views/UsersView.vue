@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import Input from '@/components/ui/Input.vue'
@@ -10,7 +11,9 @@ import TableRow from '@/components/ui/TableRow.vue'
 import TableHead from '@/components/ui/TableHead.vue'
 import TableCell from '@/components/ui/TableCell.vue'
 import { useRoles, useSession, useUsers, type User } from '@/composables/useApi'
-import { Plus, Search } from 'lucide-vue-next'
+import { FolderOpen, Plus, Search } from 'lucide-vue-next'
+import { useNotificationChannelCatalog } from '@/features/notifications/useNotificationChannelCatalog'
+import NotificationChannelSelector from '@/components/NotificationChannelSelector.vue'
 
 const {
   users,
@@ -19,24 +22,30 @@ const {
   criarUsuario,
   atualizarUsuario,
   excluirUsuario,
+  buscarUsuario,
   isCreating,
   isUpdating,
   isDeleting,
 } = useUsers()
 const { currentUser } = useSession()
+const router = useRouter()
 const canManageUsers = computed(() => Boolean(currentUser.value?.roleRoot))
 const { roles } = useRoles(canManageUsers)
+const { catalog: notificationChannelCatalog } = useNotificationChannelCatalog()
 
 const search = ref('')
 const isDialogOpen = ref(false)
 const editingUser = ref<User | null>(null)
 const formError = ref('')
+const isLoadingUser = ref(false)
 const form = reactive({
   name: '',
   username: '',
   email: '',
+  phone: '',
   password: '',
   roleIds: [] as string[],
+  notificationChannels: ['internal'] as User['notificationChannels'],
 })
 
 const filteredUsers = computed(() => {
@@ -57,8 +66,10 @@ function resetForm(): void {
   form.name = ''
   form.username = ''
   form.email = ''
+  form.phone = ''
   form.password = ''
   form.roleIds = []
+  form.notificationChannels = ['internal']
   formError.value = ''
 }
 
@@ -68,15 +79,29 @@ function openCreateDialog(): void {
   isDialogOpen.value = true
 }
 
-function openEditDialog(user: User): void {
-  editingUser.value = user
-  form.name = user.name
-  form.username = user.username
-  form.email = user.email ?? ''
-  form.password = ''
-  form.roleIds = [...(user.roleIds || [])]
-  formError.value = ''
-  isDialogOpen.value = true
+async function openEditDialog(user: User): Promise<void> {
+  isLoadingUser.value = true
+  try {
+    const completeUser = await buscarUsuario(user.id)
+    editingUser.value = completeUser
+    form.name = completeUser.name
+    form.username = completeUser.username
+    form.email = completeUser.email ?? ''
+    form.phone = completeUser.phone ?? ''
+    form.password = ''
+    form.roleIds = [...completeUser.roleIds]
+    form.notificationChannels = [...(completeUser.notificationChannels || ['internal'])]
+    formError.value = ''
+    isDialogOpen.value = true
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Não foi possível recuperar o utilizador.')
+  } finally {
+    isLoadingUser.value = false
+  }
+}
+
+function openUserDocuments(user: User): void {
+  void router.push({ path: '/cases', query: { stakeholder: user.id } })
 }
 
 function closeDialog(): void {
@@ -93,8 +118,10 @@ async function saveUser(): Promise<void> {
       name: form.name,
       username: form.username,
       email: form.email || undefined,
+      phone: form.phone || undefined,
       password: form.password || undefined,
       roleIds: form.roleIds,
+      notificationChannels: form.notificationChannels,
     }
 
     if (editingUser.value) {
@@ -186,8 +213,12 @@ function formatDate(value: string): string {
             <TableCell>{{ formatDate(user.updatedAt) }}</TableCell>
             <TableCell v-if="canManageUsers">
               <div class="flex justify-end gap-2">
-                <Button variant="outline" size="sm" @click="openEditDialog(user)">
+                <Button variant="outline" size="sm" :disabled="isLoadingUser" @click="openEditDialog(user)">
                   {{ $t('common.edit') }}
+                </Button>
+                <Button variant="outline" size="sm" title="Documentos dos processos" aria-label="Documentos dos processos" @click="openUserDocuments(user)">
+                  <FolderOpen class="h-4 w-4" />
+                  <span class="sr-only">Documentos dos processos</span>
                 </Button>
                 <Button
                   v-if="!user.root"
@@ -246,6 +277,24 @@ function formatDate(value: string): string {
         <label for="user-email" class="text-sm font-medium">{{ $t('users.email') }}</label>
         <Input id="user-email" v-model="form.email" type="email" maxlength="255" />
       </div>
+
+      <div class="space-y-2">
+        <label for="user-phone" class="text-sm font-medium">Telefone</label>
+        <Input
+          id="user-phone"
+          v-model="form.phone"
+          type="tel"
+          maxlength="40"
+          placeholder="+351912345678"
+        />
+      </div>
+
+      <NotificationChannelSelector
+        v-model="form.notificationChannels"
+        :catalog="notificationChannelCatalog"
+        :email="form.email"
+        :phone="form.phone"
+      />
 
       <div class="space-y-2">
         <label for="user-password" class="text-sm font-medium">{{ $t('users.password') }}</label>

@@ -165,6 +165,7 @@ import {
   DollarSign,
   Scale,
   ShieldCheck,
+  BriefcaseBusiness,
 } from 'lucide-vue-next'
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
@@ -314,6 +315,9 @@ const navigationItems = computed(() =>
           : []),
         ...(hasPermission('clients')
           ? [{ name: t('navigation.clients'), href: '/clients', icon: UsersRound }]
+          : []),
+        ...(hasPermission('services')
+          ? [{ name: 'Serviços', href: '/services', icon: BriefcaseBusiness }]
           : []),
         ...(currentUser.value?.root && hasPermission('companies')
           ? [{ name: t('navigation.companies'), href: '/companies', icon: Building2 }]

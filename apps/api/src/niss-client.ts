@@ -1,6 +1,6 @@
 export type NissProcess = {
   id: string
-  clientId: string
+  sourceReference: string
   requestNumber: string
   email: string
   birthDate: string
@@ -160,7 +160,7 @@ export function mapNissProcess(row: BotNissRow): NissProcess {
 
   return {
     id: text(row.id_solicitacao),
-    clientId: text(row.id_referencia_origem),
+    sourceReference: text(row.id_referencia_origem),
     requestNumber: text(row.id_pedido_niss),
     email: text(row.email),
     birthDate: text(row.data_nascimento).slice(0, 10),
@@ -195,6 +195,7 @@ export async function listNissProcesses(): Promise<NissProcess[]> {
 export async function createNissProcess(input: {
   companyId: number
   clientId: string
+  legalCaseId: string
   requestNumber: string
   email: string
   birthDate: string
@@ -202,12 +203,25 @@ export async function createNissProcess(input: {
   const row = await request<BotNissRow>('/api/v1/processos', {
     method: 'POST',
     body: JSON.stringify({
-      id_referencia_origem: input.clientId,
+      id_referencia_origem: input.legalCaseId,
       id_pedido_niss: input.requestNumber,
       email: input.email,
       data_nascimento: input.birthDate,
-      metadados: { origem: 'bo-law', empresa_id: input.companyId, cliente_id: input.clientId },
+      metadados: {
+        origem: 'bo-law',
+        empresa_id: input.companyId,
+        cliente_id: input.clientId,
+        legal_case_id: input.legalCaseId,
+      },
     }),
   })
   return mapNissProcess(row)
+}
+
+export async function reprocessNissProcess(id: string): Promise<NissProcess> {
+  return mapNissProcess(
+    await request<BotNissRow>(`/api/v1/processos/${encodeURIComponent(id)}/reprocessar`, {
+      method: 'POST',
+    }),
+  )
 }

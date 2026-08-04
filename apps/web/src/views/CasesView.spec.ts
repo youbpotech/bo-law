@@ -15,6 +15,13 @@ vi.mock('@/composables/useApi', async () => {
     useClients: () => ({
       clients: ref([{ id: 'client-1', name: 'Ana Martins', email: 'ana@example.pt' }]),
     }),
+    useServices: () => ({ services: ref([{ id: 'service-1', name: 'Nacionalidade portuguesa', processType: 'general', active: true }]) }),
+    useSession: () => ({ currentUser: ref(null) }),
+    useCaseDocuments: () => ({
+      buscarDocumentos: vi.fn(),
+      baixarDocumento: vi.fn(),
+      isLoadingDocuments: ref(false),
+    }),
   }
 })
 
@@ -26,10 +33,13 @@ vi.mock('@/features/cases/useCases', async () => {
         {
           id: 'case-1',
           companyId: 1,
+          caseType: 'general',
+          integrationStatus: 'not_applicable',
           leadId: 'lead-1',
           clientId: 'client-1',
           title: 'Pedido de nacionalidade',
-          serviceType: 'Nacionalidade portuguesa',
+          serviceId: 'service-1',
+          service: { id: 'service-1', name: 'Nacionalidade portuguesa', processType: 'general', active: true },
           description: 'Preparação e submissão do pedido.',
           contractedFee: '2000.00',
           stage: 'diligences',
@@ -67,6 +77,10 @@ vi.mock('@/features/cases/useCases', async () => {
     }),
   }
 })
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
+}))
 
 const wrappers: VueWrapper[] = []
 

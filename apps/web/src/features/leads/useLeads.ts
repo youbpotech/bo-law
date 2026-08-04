@@ -64,7 +64,14 @@ export function useLeads() {
   })
   const convertMutation = useMutation({
     mutationFn: (input: ConvertLeadInput) => convertLead(selectedLeadId.value!, input),
-    onSuccess: () => refresh(),
+    onSuccess: async () => {
+      refresh()
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['cases'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'internal'] }),
+      ])
+    },
   })
 
   function selectLead(id: string) {

@@ -1,5 +1,17 @@
-export type NotificationChannel = 'email' | 'whatsapp' | 'internal'
+export const NOTIFICATION_CHANNELS = ['internal', 'email', 'whatsapp', 'sms'] as const
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number]
 export type NotificationStatus = 'pending' | 'sent' | 'partial' | 'failed'
+
+export interface NotificationChannelCatalogItem {
+  channel: NotificationChannel
+  supported: boolean
+  implemented: boolean
+  configured: boolean
+  availableForUser: boolean
+  reason: string | null
+}
+
+export type NotificationChannelOption = NotificationChannelCatalogItem
 
 export interface InternalNotification {
   id: string

@@ -6,6 +6,7 @@ export const RESOURCE_KEYS = [
   'roles',
   'clients',
   'companies',
+  'services',
   'leads',
   'cases',
   'niss',

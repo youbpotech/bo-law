@@ -10,6 +10,7 @@ export function useCases() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['cases'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] }),
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'internal'] }),
     ])
   }
 

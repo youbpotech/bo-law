@@ -9,6 +9,7 @@ TypeScript, Express, TypeORM, Keycloak e PostgreSQL.
 - Captação e qualificação de contatos por canal, inclusive WhatsApp.
 - Entrevista comercial, reidratação em 30 dias e conversão de lead em cliente.
 - Processo jurídico com esteira de execução e retorno para coleta documental.
+- Processos NISS e AIMA registados no mesmo agregado `LegalCase` e associados ao cliente.
 - Faturação parcial de 30% e final de 70%.
 - Dashboard cujos indicadores visíveis são configuráveis por empresa.
 
@@ -84,7 +85,10 @@ BOTNISS_API_URL=http://host.docker.internal:3000
 BOTNISS_API_KEY=uma_chave_aleatoria_com_pelo_menos_32_caracteres
 ```
 
-O `bo-law` apenas consome essa API. O BotNiss permanece um serviço independente e não é alterado por este projeto.
+O `bo-law` apenas consome essa API. Antes de solicitar o acompanhamento externo, cria um
+`LegalCase` NISS associado ao cliente e envia o UUID desse processo como
+`id_referencia_origem`. O BotNiss permanece um serviço independente e não é alterado
+por este projeto.
 
 ### Acompanhamento de processos AIMA
 
@@ -97,8 +101,11 @@ BOTAIMA_API_KEY=uma_chave_aleatoria_com_pelo_menos_32_caracteres
 ```
 
 No desenvolvimento local, use `http://localhost:3000`. A API do backoffice mantém a
-chave do BotAIMA no servidor, valida o cliente/tenant antes de expor dossiês e documentos
-e disponibiliza criação, consulta, reprocessamento e download dos snapshots retornados.
+chave do BotAIMA no servidor, cria um `LegalCase` AIMA associado ao cliente, envia o UUID
+desse processo como `id_referencia_origem`, valida o cliente/tenant antes de expor dossiês
+e documentos e disponibiliza criação, consulta, reprocessamento e download dos snapshots
+retornados. NISS e AIMA usam o mesmo contrato de processos; a integração externa apenas
+complementa o agregado local.
 
 O Keycloak contém as roles técnicas `dashboard`, `users`, `roles`, `clients`, `companies`,
 `leads`, `cases`, `niss` e `aima`. O backoffice permite que usuários Root criem roles compostas por empresa
@@ -137,10 +144,24 @@ em ambientes multiempresa, mantenha-o vazio e configure o WhatsApp de cada empre
 
 ## Notificações omnichannel
 
-O módulo `apps/api/src/notifications` recebe um conjunto de canais por notificação. Os
-canais iniciais são `email`, `whatsapp` e `internal`; valores repetidos são eliminados
-pelo `Set`. Cada canal gera uma entrega independente, com estado, número de tentativas,
-identificador do provedor e último erro. Falhas transitórias são retomadas pelo worker.
+O módulo `apps/api/src/notifications` mantém um catálogo único com os canais suportados
+`internal`, `email`, `whatsapp` e `sms`. Todo utilizador possui preferências próprias;
+`internal` é o padrão. A interface exibe sempre o catálogo completo e deixa esmaecidos os
+canais não configurados, sem contacto compatível ou ainda não implementados.
+
+Ao criar um processo geral, NISS ou AIMA, o criador é registado como stakeholder
+obrigatório e não removível. Outros utilizadores da mesma empresa podem ser incluídos na
+lista de stakeholders. Cada evento do processo resolve os canais atualmente habilitados
+e disponíveis de cada participante; se todos os canais externos preferidos estiverem
+indisponíveis, utiliza o alerta interno. Cada canal gera uma entrega independente, com
+estado, número de tentativas, identificador do provedor e último erro. Falhas transitórias
+são retomadas pelo worker.
+
+Na listagem de processos, o botão de documentos abre os ficheiros disponíveis no processo
+integrado. Processos gerais mantêm o respetivo estado documental, mas não apresentam
+ficheiros enquanto não existir um repositório documental associado. A listagem de
+utilizadores oferece um atalho para filtrar os processos em que cada utilizador é
+stakeholder e aceder aos respetivos documentos.
 
 Serviços da aplicação devem solicitar notificações pela função `notify`:
 
@@ -177,7 +198,8 @@ NOTIFICATION_WORKER_POLL_MS=3000
 NOTIFICATION_MAX_ATTEMPTS=5
 ```
 
-O `.env.example` também mantém o contrato reservado ao futuro canal SMS
+O SMS integra o catálogo suportado, mas permanece indisponível para seleção e entrega até
+existir um adapter. O `.env.example` mantém o contrato reservado ao canal
 (`SMS_PROVIDER`, `SMS_API_BASE_URL`, `SMS_API_KEY`, `SMS_API_SECRET` e `SMS_FROM`).
 Essas variáveis somente serão consumidas quando o respectivo adapter for implementado.
 
@@ -192,8 +214,9 @@ Quando a empresa não possui banner de login ou logomarca próprios, o frontend 
 os assets versionados em `apps/web/public/branding`. As imagens personalizadas continuam
 armazenadas por empresa e sempre têm precedência sobre esses padrões.
 
-Um canal futuro, como SMS, é incluído implementando `NotificationChannelAdapter`,
-registrando o adapter na factory e acrescentando o identificador do canal ao contrato.
+Para ativar o SMS futuramente, implemente `NotificationChannelAdapter`, registe-o na
+factory e faça o catálogo marcá-lo como implementado e configurado. O identificador e os
+contratos de persistência já existem.
 
 ## Verificação
 

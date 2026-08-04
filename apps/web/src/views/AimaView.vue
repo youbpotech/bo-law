@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  CircleAlert,
   CircleCheck,
   CircleX,
   Clock3,
@@ -28,11 +27,13 @@ import TableHeader from '@/components/ui/TableHeader.vue'
 import TableRow from '@/components/ui/TableRow.vue'
 import AimaDossierModal from '@/components/AimaDossierModal.vue'
 import AimaDocumentsModal from '@/components/AimaDocumentsModal.vue'
-import { useAima, useClients, type AimaInput, type AimaProcess, type Client, type AimaDocument } from '@/composables/useApi'
+import ProcessStakeholderSelector from '@/components/ProcessStakeholderSelector.vue'
+import { useAima, useClients, useSession, type AimaInput, type AimaProcess, type Client, type AimaDocument } from '@/composables/useApi'
 
 const route = useRoute()
 const router = useRouter()
 const { clients, isLoading: clientsLoading } = useClients()
+const { currentUser } = useSession()
 const {
   processes,
   isLoading,
@@ -54,7 +55,7 @@ const isDialogOpen = ref(false)
 const formError = ref('')
 const clientSearch = ref('')
 const isClientMenuOpen = ref(false)
-const form = reactive<AimaInput>({ clientId: '', trackingUrl: '' })
+const form = reactive<AimaInput>({ clientId: '', trackingUrl: '', stakeholderUserIds: [] })
 const dossier = ref<Record<string, unknown> | null>(null)
 const dossierProcessId = ref('')
 const dossierError = ref('')
@@ -87,7 +88,7 @@ function clientName(client: Client): string {
 }
 
 function resetForm(): void {
-  Object.assign(form, { clientId: '', trackingUrl: '' })
+  Object.assign(form, { clientId: '', trackingUrl: '', stakeholderUserIds: [] })
   clientSearch.value = ''
   isClientMenuOpen.value = false
   formError.value = ''
@@ -276,7 +277,7 @@ onUnmounted(() => {
             <TableCell><span :class="['inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium', statusClass(process.operationalStatus)]"><component :is="statusIcon(process.operationalStatus)" :class="['h-4 w-4', process.operationalStatus === 1 ? 'animate-spin' : '']" />{{ operationalStatus(process) }}</span><p v-if="process.denialReason" class="mt-1 max-w-xs text-xs text-destructive">{{ process.denialReason }}</p></TableCell>
           <TableCell>{{ process.lastPortalConsultationAt ? date(process.lastPortalConsultationAt, true) : 'Ainda não consultado' }}</TableCell>
           <TableCell><span :title="date(process.updatedAt, true)" :aria-label="`Atualizado em ${date(process.updatedAt, true)}`">{{ elapsedTime(process.updatedAt) }}</span></TableCell>
-            <TableCell><div class="flex justify-end gap-2"><Button size="sm" variant="outline" :disabled="isLoadingDossier" title="Dossiê" aria-label="Dossiê" @click="openDossier(process.id)"><FileSearch class="h-4 w-4" /><span class="sr-only">Dossiê</span></Button><Button size="sm" variant="outline" :disabled="isLoadingDocuments" title="Documentos" aria-label="Documentos" @click="openDocuments(process.id)"><FolderOpen class="h-4 w-4" /><span class="sr-only">Documentos</span></Button><Button size="sm" variant="outline" :disabled="isReprocessing || process.operationalStatus === 1" title="Solicitar nova consulta" aria-label="Solicitar nova consulta" @click="reprocess(process)"><CircleAlert class="h-4 w-4" /><span class="sr-only">Solicitar nova consulta</span></Button></div></TableCell>
+            <TableCell><div class="flex justify-end gap-2"><Button size="sm" variant="outline" :disabled="isLoadingDossier" title="Dossiê" aria-label="Dossiê" @click="openDossier(process.id)"><FileSearch class="h-4 w-4" /><span class="sr-only">Dossiê</span></Button><Button size="sm" variant="outline" :disabled="isLoadingDocuments" title="Documentos" aria-label="Documentos" @click="openDocuments(process.id)"><FolderOpen class="h-4 w-4" /><span class="sr-only">Documentos</span></Button><Button size="sm" variant="outline" :disabled="isReprocessing || process.operationalStatus === 1" title="Solicitar nova consulta" aria-label="Solicitar nova consulta" @click="reprocess(process)"><RefreshCw :class="['h-4 w-4', isReprocessing ? 'animate-spin' : '']" /><span class="sr-only">Solicitar nova consulta</span></Button></div></TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -285,7 +286,7 @@ onUnmounted(() => {
 
   <Dialog :open="isDialogOpen" @update:open="(open) => !open && (isDialogOpen = false)">
     <form class="space-y-5" @submit.prevent="saveAima">
-      <div><h2 class="text-xl font-semibold">Novo processo AIMA</h2><p class="text-sm text-muted-foreground">Associe um link público de acompanhamento AIMA a um cliente para que o BotAIMA faça as consultas.</p></div>
+      <div><h2 class="text-xl font-semibold">Novo Processo AIMA</h2><p class="text-sm text-muted-foreground">Associe o link público do acompanhamento AIMA do cliente para que o Agente AIMDA acomoanhe o processo e notifique-o sempre que houver atualizações.</p></div>
       <div class="space-y-2">
         <label for="aima-client" class="text-sm font-medium">Cliente</label>
         <div class="relative">
@@ -299,6 +300,12 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="space-y-2" :class="{ 'opacity-50': !selectedClient }"><label for="aima-url" class="text-sm font-medium">Link de acompanhamento AIMA</label><Input id="aima-url" v-model="form.trackingUrl" type="url" required :disabled="!selectedClient" placeholder="https://contactenos.aima.gov.pt/tracking/<UUID>" /><p class="text-xs text-muted-foreground">Use o link completo copiado do portal AIMA.</p></div>
+      <ProcessStakeholderSelector
+        v-if="currentUser"
+        v-model="form.stakeholderUserIds"
+        :creator="{ id: currentUser.id, name: currentUser.name }"
+        :disabled="!selectedClient"
+      />
       <p v-if="formError" class="text-sm text-destructive">{{ formError }}</p>
       <div class="flex justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" @click="isDialogOpen = false">Cancelar</Button><Button type="submit" :disabled="!selectedClient || isCreating">{{ isCreating ? 'Criando...' : 'Criar acompanhamento' }}</Button></div>
     </form>

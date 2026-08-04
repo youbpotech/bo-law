@@ -19,4 +19,8 @@ describe('toNotificationChannelSet', () => {
       'Canal de notificação inválido: fax',
     )
   })
+
+  it('reconhece SMS como canal suportado pelo contrato', () => {
+    expect(toNotificationChannelSet(['sms'])).toEqual(new Set(['sms']))
+  })
 })

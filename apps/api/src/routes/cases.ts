@@ -1,12 +1,24 @@
 import { Router } from 'express'
 import { EntityManager } from 'typeorm'
 import { AppDataSource } from '../data-source'
-import { requireResourceUser } from '../auth/current-user'
+import { requireCurrentUser, requireResourceUser } from '../auth/current-user'
 import { requireAuth } from '../auth/middleware'
 import { Client } from '../entities/Client'
 import { Invoice, InvoiceStatus } from '../entities/Invoice'
 import { Lead } from '../entities/Lead'
 import { LegalCase, LegalCaseStage } from '../entities/LegalCase'
+import { LegalCaseStakeholder } from '../entities/LegalCaseStakeholder'
+import { User } from '../entities/User'
+import { ServiceType } from '../entities/ServiceType'
+import {
+  LegalCaseParticipantValidationError,
+  loadLegalCaseWithParticipants,
+  parseStakeholderUserIds,
+  saveLegalCaseStakeholders,
+} from '../cases/process-service'
+import { notifyLegalCaseEvent } from '../notifications/case-events'
+import { downloadAimaDocument, getAimaDocuments } from '../aima-client'
+import { downloadNissDocument, getNissDocuments } from '../niss-client'
 import {
   CASE_STAGES,
   INVOICE_STATUSES,
@@ -19,6 +31,43 @@ import {
 export const casesRouter = Router()
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+casesRouter.get('/process-stakeholders/candidates', requireAuth, async (req, res) => {
+  const currentUser = await requireCurrentUser(req, res)
+  if (!currentUser) return
+  if (
+    !currentUser.root &&
+    !(['cases', 'niss', 'aima'] as const).some((resource) =>
+      currentUser.permissions?.includes(resource),
+    )
+  ) {
+    res.status(403).json({ error: 'Você não possui permissão para criar processos.' })
+    return
+  }
+  const users = await AppDataSource.getRepository(User).find({
+    where: { companyId: currentUser.companyId },
+    relations: ['notificationChannelPreferences'],
+    order: { name: 'ASC' },
+  })
+  if (!users.some(({ id }) => id === currentUser.id)) {
+    res.status(409).json({
+      error: 'Use um utilizador associado à empresa atual para criar processos.',
+    })
+    return
+  }
+  res.json(
+    users.map((user) => {
+      const notificationChannels = user.notificationChannelPreferences
+        .filter(({ enabled }) => enabled)
+        .map(({ channel }) => channel)
+      return {
+        id: user.id,
+        name: user.name,
+        notificationChannels: notificationChannels.length ? notificationChannels : ['internal'],
+      }
+    }),
+  )
+})
 
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -41,11 +90,7 @@ function parseOptionalDate(value: unknown): Date | null {
 }
 
 function loadCase(id: string, companyId: number) {
-  return AppDataSource.getRepository(LegalCase).findOne({
-    where: { id, companyId },
-    relations: ['client', 'lead', 'invoices'],
-    order: { invoices: { createdAt: 'ASC' } },
-  })
+  return loadLegalCaseWithParticipants(id, companyId)
 }
 
 type CaseCreationInput = {
@@ -53,11 +98,13 @@ type CaseCreationInput = {
   clientId: string
   leadId?: string | null
   title: string
-  serviceType: string
+  serviceId: string
   description?: string | null
   contractedFee: number
   contractSignedAt?: Date | null
   dueAt?: Date | null
+  creatorUserId: string
+  stakeholderUserIds: string[]
 }
 
 async function persistCaseWithPartialInvoice(manager: EntityManager, input: CaseCreationInput) {
@@ -66,8 +113,11 @@ async function persistCaseWithPartialInvoice(manager: EntityManager, input: Case
       companyId: input.companyId,
       clientId: input.clientId,
       leadId: input.leadId ?? null,
+      createdByUserId: input.creatorUserId,
+      caseType: 'general',
+      integrationStatus: 'not_applicable',
       title: input.title,
-      serviceType: input.serviceType,
+      serviceId: input.serviceId,
       description: input.description ?? null,
       contractedFee: input.contractedFee,
       contractSignedAt: input.contractSignedAt ?? new Date(),
@@ -77,6 +127,13 @@ async function persistCaseWithPartialInvoice(manager: EntityManager, input: Case
       completedAt: null,
     }),
   )
+
+  await saveLegalCaseStakeholders(manager, {
+    legalCaseId: legalCase.id,
+    companyId: input.companyId,
+    creatorUserId: input.creatorUserId,
+    stakeholderUserIds: input.stakeholderUserIds,
+  })
 
   await manager.save(
     manager.create(Invoice, {
@@ -123,7 +180,12 @@ casesRouter.get('/cases', requireAuth, async (req, res) => {
     .createQueryBuilder('legalCase')
     .leftJoinAndSelect('legalCase.client', 'client')
     .leftJoinAndSelect('legalCase.lead', 'lead')
+    .leftJoinAndSelect('legalCase.service', 'service')
     .leftJoinAndSelect('legalCase.invoices', 'invoice')
+    .leftJoinAndSelect('legalCase.createdByUser', 'createdByUser')
+    .leftJoinAndSelect('legalCase.stakeholders', 'stakeholder')
+    .leftJoinAndSelect('stakeholder.user', 'stakeholderUser')
+    .leftJoinAndSelect('legalCase.integrations', 'integration')
     .where('legalCase.companyId = :companyId', { companyId: user.companyId })
     .orderBy('legalCase.updatedAt', 'DESC')
     .addOrderBy('invoice.createdAt', 'ASC')
@@ -148,6 +210,82 @@ casesRouter.get('/cases/:id', requireAuth, async (req, res) => {
   res.json(legalCase)
 })
 
+async function processDocumentIntegration(legalCase: LegalCase) {
+  return legalCase.integrations.find(
+    (integration) =>
+      integration.externalProcessId &&
+      (integration.provider === 'botniss' || integration.provider === 'botaima'),
+  )
+}
+
+casesRouter.get('/cases/:id/documents', requireAuth, async (req, res) => {
+  if (!UUID_PATTERN.test(req.params.id)) {
+    res.status(400).json({ error: 'Processo inválido' })
+    return
+  }
+  const user = await requireResourceUser(req, res, 'cases')
+  if (!user) return
+  const legalCase = await loadCase(req.params.id, user.companyId)
+  if (!legalCase) {
+    res.status(404).json({ error: 'Processo não encontrado' })
+    return
+  }
+  const integration = await processDocumentIntegration(legalCase)
+  if (!integration?.externalProcessId) {
+    res.json({ provider: null, processId: null, documents: [] })
+    return
+  }
+  try {
+    const documents =
+      integration.provider === 'botniss'
+        ? await getNissDocuments(integration.externalProcessId)
+        : await getAimaDocuments(integration.externalProcessId)
+    res.json({
+      provider: integration.provider,
+      processId: integration.externalProcessId,
+      documents,
+    })
+  } catch (error) {
+    res.status(502).json({
+      error: error instanceof Error ? error.message : 'Não foi possível consultar os documentos.',
+    })
+  }
+})
+
+casesRouter.get('/cases/:id/documents/:fileName', requireAuth, async (req, res) => {
+  if (!UUID_PATTERN.test(req.params.id)) {
+    res.status(400).json({ error: 'Processo inválido' })
+    return
+  }
+  const user = await requireResourceUser(req, res, 'cases')
+  if (!user) return
+  const legalCase = await loadCase(req.params.id, user.companyId)
+  if (!legalCase) {
+    res.status(404).json({ error: 'Processo não encontrado' })
+    return
+  }
+  const integration = await processDocumentIntegration(legalCase)
+  if (!integration?.externalProcessId) {
+    res.status(404).json({ error: 'Este processo não possui documentos associados.' })
+    return
+  }
+  try {
+    const download =
+      integration.provider === 'botniss'
+        ? await downloadNissDocument(integration.externalProcessId, req.params.fileName)
+        : await downloadAimaDocument(integration.externalProcessId, req.params.fileName)
+    const fileName = download.fileName.replace(/^.*[\\/]/, '').replace(/[^a-zA-Z0-9._ -]/g, '_')
+    res.setHeader('Content-Type', download.mimeType)
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(download.data)
+  } catch (error) {
+    res.status(502).json({
+      error: error instanceof Error ? error.message : 'Não foi possível transferir o documento.',
+    })
+  }
+})
+
 casesRouter.post('/cases', requireAuth, async (req, res) => {
   const user = await requireResourceUser(req, res, 'cases')
   if (!user) return
@@ -155,16 +293,23 @@ casesRouter.post('/cases', requireAuth, async (req, res) => {
   const clientId = normalizeText(req.body.clientId)
   const leadId = normalizeNullableText(req.body.leadId)
   const title = normalizeText(req.body.title)
-  const serviceType = normalizeText(req.body.serviceType)
+  const serviceId = normalizeText(req.body.serviceId)
   const contractedFee = normalizeMoney(req.body.contractedFee)
   const contractSignedAt = parseOptionalDate(req.body.contractSignedAt)
   const dueAt = parseOptionalDate(req.body.dueAt)
+  let stakeholderUserIds: string[]
+  try {
+    stakeholderUserIds = parseStakeholderUserIds(req.body.stakeholderUserIds)
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Stakeholders inválidos' })
+    return
+  }
 
   if (!UUID_PATTERN.test(clientId) || (leadId && !UUID_PATTERN.test(leadId))) {
     res.status(400).json({ error: 'Cliente ou lead inválido' })
     return
   }
-  if (!title || !serviceType || !contractedFee) {
+  if (!title || !UUID_PATTERN.test(serviceId) || !contractedFee) {
     res.status(400).json({ error: 'Cliente, título, serviço e honorários são obrigatórios' })
     return
   }
@@ -188,6 +333,8 @@ casesRouter.post('/cases', requireAuth, async (req, res) => {
     res.status(409).json({ error: 'Conclua a entrevista antes de formalizar o contrato' })
     return
   }
+  const service = await AppDataSource.getRepository(ServiceType).findOneBy({ id: serviceId, companyId: user.companyId, active: true, processType: 'general' })
+  if (!service) { res.status(400).json({ error: 'Selecione um serviço ativo da empresa.' }); return }
 
   try {
     const id = await createCaseWithPartialInvoice({
@@ -195,14 +342,27 @@ casesRouter.post('/cases', requireAuth, async (req, res) => {
       clientId,
       leadId,
       title,
-      serviceType,
+      serviceId: service.id,
       description: normalizeNullableText(req.body.description),
       contractedFee,
       contractSignedAt,
       dueAt,
+      creatorUserId: user.id,
+      stakeholderUserIds,
+    })
+    await notifyLegalCaseEvent({
+      legalCaseId: id,
+      eventType: 'process.created',
+      title: 'Novo processo criado',
+      body: `O processo "${title}" foi criado.`,
+      actorUserId: user.id,
     })
     res.status(201).json(await loadCase(id, user.companyId))
   } catch (error) {
+    if (error instanceof LegalCaseParticipantValidationError) {
+      res.status(400).json({ error: error.message })
+      return
+    }
     if (typeof error === 'object' && error && 'code' in error && error.code === '23505') {
       res.status(409).json({ error: 'Este lead já possui um processo jurídico' })
       return
@@ -237,12 +397,19 @@ casesRouter.post('/leads/:id/convert', requireAuth, async (req, res) => {
   }
 
   const title = normalizeText(req.body.title)
-  const serviceType = normalizeText(req.body.serviceType) || lead.serviceType || ''
+  const serviceId = normalizeText(req.body.serviceId)
   const contractedFee = normalizeMoney(req.body.contractedFee)
   const requestedClientId = normalizeNullableText(req.body.clientId) || lead.clientId
   const contractSignedAt = parseOptionalDate(req.body.contractSignedAt)
   const dueAt = parseOptionalDate(req.body.dueAt)
-  if (!title || !serviceType || !contractedFee) {
+  let stakeholderUserIds: string[]
+  try {
+    stakeholderUserIds = parseStakeholderUserIds(req.body.stakeholderUserIds)
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Stakeholders inválidos' })
+    return
+  }
+  if (!title || !UUID_PATTERN.test(serviceId) || !contractedFee) {
     res.status(400).json({ error: 'Título, serviço e honorários contratados são obrigatórios' })
     return
   }
@@ -254,6 +421,8 @@ casesRouter.post('/leads/:id/convert', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Cliente inválido' })
     return
   }
+  const service = await AppDataSource.getRepository(ServiceType).findOneBy({ id: serviceId, companyId: user.companyId, active: true, processType: 'general' })
+  if (!service) { res.status(400).json({ error: 'Selecione um serviço ativo da empresa.' }); return }
 
   let client: Client | null = null
   let newClient: Pick<Client, 'companyId' | 'name' | 'phone' | 'email'> | null = null
@@ -288,15 +457,28 @@ casesRouter.post('/leads/:id/convert', requireAuth, async (req, res) => {
         clientId: persistedClient.id,
         leadId: lead.id,
         title,
-        serviceType,
+        serviceId: service.id,
         description: normalizeNullableText(req.body.description) ?? lead.caseSummary,
         contractedFee,
         contractSignedAt,
         dueAt,
+        creatorUserId: user.id,
+        stakeholderUserIds,
       })
+    })
+    await notifyLegalCaseEvent({
+      legalCaseId: id,
+      eventType: 'process.created',
+      title: 'Novo processo criado',
+      body: `O processo "${title}" foi criado.`,
+      actorUserId: user.id,
     })
     res.status(201).json(await loadCase(id, user.companyId))
   } catch (error) {
+    if (error instanceof LegalCaseParticipantValidationError) {
+      res.status(400).json({ error: error.message })
+      return
+    }
     if (typeof error === 'object' && error && 'code' in error && error.code === '23505') {
       res.status(409).json({ error: 'Este lead já possui um processo jurídico' })
       return
@@ -318,6 +500,27 @@ casesRouter.patch('/cases/:id', requireAuth, async (req, res) => {
     res.status(404).json({ error: 'Processo não encontrado' })
     return
   }
+  const previousStage = legalCase.stage
+  let stakeholderUserIds: string[] | undefined
+  try {
+    stakeholderUserIds =
+      req.body.stakeholderUserIds === undefined
+        ? undefined
+        : parseStakeholderUserIds(req.body.stakeholderUserIds)
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Stakeholders inválidos' })
+    return
+  }
+
+  if (
+    legalCase.caseType !== 'general' &&
+    (req.body.stage !== undefined || req.body.documentsComplete !== undefined)
+  ) {
+    res.status(409).json({
+      error: 'A etapa e os documentos deste processo são geridos pela integração externa.',
+    })
+    return
+  }
 
   if (req.body.title !== undefined) {
     const title = normalizeText(req.body.title)
@@ -327,13 +530,11 @@ casesRouter.patch('/cases/:id', requireAuth, async (req, res) => {
     }
     legalCase.title = title
   }
-  if (req.body.serviceType !== undefined) {
-    const serviceType = normalizeText(req.body.serviceType)
-    if (!serviceType) {
-      res.status(400).json({ error: 'O serviço não pode ficar vazio' })
-      return
-    }
-    legalCase.serviceType = serviceType
+  if (req.body.serviceId !== undefined) {
+    if (legalCase.caseType !== 'general' || !UUID_PATTERN.test(normalizeText(req.body.serviceId))) { res.status(400).json({ error: 'Serviço inválido para este processo.' }); return }
+    const service = await AppDataSource.getRepository(ServiceType).findOneBy({ id: req.body.serviceId, companyId: user.companyId, active: true, processType: 'general' })
+    if (!service) { res.status(400).json({ error: 'Selecione um serviço ativo da empresa.' }); return }
+    legalCase.serviceId = service.id
   }
   if (req.body.description !== undefined)
     legalCase.description = normalizeNullableText(req.body.description)
@@ -366,31 +567,68 @@ casesRouter.patch('/cases/:id', requireAuth, async (req, res) => {
     legalCase.stage = nextStage
   }
 
-  await AppDataSource.transaction(async (manager) => {
-    await manager.save(legalCase)
-    if (legalCase.stage === 'awaiting_final_payment') {
-      const existing = await manager.findOneBy(Invoice, {
-        legalCaseId: legalCase.id,
-        kind: 'final',
-      })
-      if (!existing) {
-        await manager.save(
-          manager.create(Invoice, {
-            legalCaseId: legalCase.id,
-            kind: 'final',
-            percentage: 70,
-            amount: calculateInvoiceAmount(Number(legalCase.contractedFee), 'final'),
-            status: 'requested',
-            dueAt: null,
-            issuedAt: null,
-            paidAt: null,
-          }),
-        )
+  try {
+    await AppDataSource.transaction(async (manager) => {
+      await manager.save(legalCase)
+      if (stakeholderUserIds !== undefined) {
+        await manager
+          .createQueryBuilder()
+          .delete()
+          .from(LegalCaseStakeholder)
+          .where('legal_case_id = :legalCaseId', { legalCaseId: legalCase.id })
+          .andWhere('role = :role', { role: 'stakeholder' })
+          .execute()
+        await saveLegalCaseStakeholders(manager, {
+          legalCaseId: legalCase.id,
+          companyId: legalCase.companyId,
+          creatorUserId: legalCase.createdByUserId,
+          stakeholderUserIds,
+        })
       }
+      if (legalCase.stage === 'awaiting_final_payment') {
+        const existing = await manager.findOneBy(Invoice, {
+          legalCaseId: legalCase.id,
+          kind: 'final',
+        })
+        if (!existing) {
+          await manager.save(
+            manager.create(Invoice, {
+              legalCaseId: legalCase.id,
+              kind: 'final',
+              percentage: 70,
+              amount: calculateInvoiceAmount(Number(legalCase.contractedFee), 'final'),
+              status: 'requested',
+              dueAt: null,
+              issuedAt: null,
+              paidAt: null,
+            }),
+          )
+        }
+      }
+    })
+  } catch (error) {
+    if (error instanceof LegalCaseParticipantValidationError) {
+      res.status(400).json({ error: error.message })
+      return
     }
-  })
+    throw error
+  }
+  const updated = await loadCase(legalCase.id, user.companyId)
+  if (updated && previousStage !== updated.stage) {
+    await notifyLegalCaseEvent({
+      legalCaseId: updated.id,
+      eventType: updated.stage === 'closed' ? 'process.completed' : 'process.status_changed',
+      title: updated.stage === 'closed' ? 'Processo concluído' : 'Etapa do processo atualizada',
+      body:
+        updated.stage === 'closed'
+          ? `O processo "${updated.title}" foi concluído.`
+          : `O processo "${updated.title}" avançou para a etapa ${updated.stage}.`,
+      actorUserId: user.id,
+      eventKey: `${updated.stage}:${updated.updatedAt.toISOString()}`,
+    })
+  }
 
-  res.json(await loadCase(legalCase.id, user.companyId))
+  res.json(updated)
 })
 
 casesRouter.patch('/cases/:caseId/invoices/:invoiceId', requireAuth, async (req, res) => {
@@ -425,6 +663,7 @@ casesRouter.patch('/cases/:caseId/invoices/:invoiceId', requireAuth, async (req,
     return
   }
 
+  const previousCaseStage = legalCase.stage
   invoice.status = nextStatus
   if (nextStatus === 'issued' && !invoice.issuedAt) invoice.issuedAt = new Date()
   if (nextStatus === 'paid' && !invoice.paidAt) invoice.paidAt = new Date()
@@ -439,5 +678,20 @@ casesRouter.patch('/cases/:caseId/invoices/:invoiceId', requireAuth, async (req,
     }
   })
 
-  res.json(await loadCase(legalCase.id, user.companyId))
+  const updated = await loadCase(legalCase.id, user.companyId)
+  if (updated && previousCaseStage !== updated.stage) {
+    await notifyLegalCaseEvent({
+      legalCaseId: updated.id,
+      eventType: updated.stage === 'closed' ? 'process.completed' : 'process.status_changed',
+      title: updated.stage === 'closed' ? 'Processo concluído' : 'Etapa do processo atualizada',
+      body:
+        updated.stage === 'closed'
+          ? `O processo "${updated.title}" foi concluído.`
+          : `O processo "${updated.title}" avançou para a etapa ${updated.stage}.`,
+      actorUserId: user.id,
+      eventKey: `invoice:${invoice.id}:${nextStatus}`,
+    })
+  }
+
+  res.json(updated)
 })

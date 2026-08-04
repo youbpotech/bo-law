@@ -28,6 +28,7 @@ import TableRow from '@/components/ui/TableRow.vue'
 import NissDossierModal from '@/components/NissDossierModal.vue'
 import NissDocumentsModal from '@/components/NissDocumentsModal.vue'
 import NissCitizenDetailsModal from '@/components/NissCitizenDetailsModal.vue'
+import ProcessStakeholderSelector from '@/components/ProcessStakeholderSelector.vue'
 import { useClients, useNiss, useSession, type Client, type NissInput, type NissDocument } from '@/composables/useApi'
 import { resolveCompanyLogoUrl } from '@/lib/branding'
 
@@ -42,7 +43,7 @@ const {
 const { currentUser } = useSession()
 const {
   processes, isLoading, error, criarNiss, buscarDossie, buscarDocumentos, baixarDocumento,
-  isCreating, isLoadingDossier, isLoadingDocuments, refresh,
+  reprocessar, isCreating, isLoadingDossier, isLoadingDocuments, isReprocessing, refresh,
 } = useNiss()
 const search = ref('')
 const isDialogOpen = ref(false)
@@ -67,7 +68,13 @@ const actionError = ref('')
 const currentTime = ref(Date.now())
 let currentTimeInterval: number | undefined
 const dossierModalRef = ref<InstanceType<typeof NissDossierModal> | null>(null)
-const form = reactive<NissInput>({ clientId: '', requestNumber: '', email: '', birthDate: '' })
+const form = reactive<NissInput>({
+  clientId: '',
+  requestNumber: '',
+  email: '',
+  birthDate: '',
+  stakeholderUserIds: [],
+})
 
 const selectedClient = computed(() => clients.value.find((client) => client.id === form.clientId))
 const filteredClients = computed(() => {
@@ -85,7 +92,13 @@ const filteredProcesses = computed(() => {
 })
 
 function resetForm(): void {
-  Object.assign(form, { clientId: '', requestNumber: '', email: '', birthDate: '' })
+  Object.assign(form, {
+    clientId: '',
+    requestNumber: '',
+    email: '',
+    birthDate: '',
+    stakeholderUserIds: [],
+  })
   clientSearch.value = ''
   isClientMenuOpen.value = false
   formError.value = ''
@@ -205,6 +218,16 @@ async function openDocuments(id: string, requestNumber: string): Promise<void> {
   }
 }
 
+async function reprocess(process: { id: string; requestNumber: string; client: Client }): Promise<void> {
+  if (!window.confirm(`Solicitar uma nova consulta para o pedido NISS ${process.requestNumber} de ${clientName(process.client)}?`)) return
+  actionError.value = ''
+  try {
+    await reprocessar(process.id)
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível solicitar a reconsulta NISS.'
+  }
+}
+
 async function openCitizenDetails(process: {
   id: string
   requestNumber: string
@@ -319,6 +342,10 @@ onUnmounted(() => {
                   <FolderOpen class="h-4 w-4" />
                   <span class="sr-only">Documentos</span>
                 </Button>
+                <Button size="sm" variant="outline" :disabled="isReprocessing || process.operationalStatus === 1" title="Solicitar nova consulta" aria-label="Solicitar nova consulta" @click="reprocess(process)">
+                  <RefreshCw :class="['h-4 w-4', isReprocessing ? 'animate-spin' : '']" />
+                  <span class="sr-only">Solicitar nova consulta</span>
+                </Button>
               </div>
             </TableCell>
           </TableRow>
@@ -329,7 +356,7 @@ onUnmounted(() => {
 
   <Dialog :open="isDialogOpen" @update:open="(open) => !open && (isDialogOpen = false)">
     <form class="space-y-5" @submit.prevent="saveNiss">
-      <div><h2 class="text-xl font-semibold">Novo NISS</h2><p class="text-sm text-muted-foreground">Selecione primeiro o cliente. O email utilizado no pedido poderá ser ajustado; a data de nascimento será obtida do cadastro do cliente.</p></div>
+      <div><h2 class="text-xl font-semibold">Novo NISS</h2><p class="text-sm text-muted-foreground">Indique os dados fornecidos na solicitação do NISS do cliente para que o Agente NISS acomopanhe o processo e notifique-o sempre que houver atualizações. Primeiro o cliente. O email utilizado no pedido poderá ser ajustado; a data de nascimento será obtida do cadastro do cliente.</p></div>
       <div class="space-y-2">
         <label for="niss-client" class="text-sm font-medium">Cliente</label>
         <div class="relative">
@@ -381,8 +408,14 @@ onUnmounted(() => {
         <div class="space-y-2"><label for="niss-request" class="text-sm font-medium">Número do pedido NISS</label><Input id="niss-request" v-model="form.requestNumber" inputmode="numeric" pattern="[0-9]+" required :disabled="!selectedClient" /></div>
         <div class="space-y-2"><label for="niss-email" class="text-sm font-medium">Email utilizado no pedido</label><Input id="niss-email" v-model="form.email" type="email" required :disabled="!selectedClient" /></div>
         <div class="space-y-2"><label for="niss-birth" class="text-sm font-medium">Data de nascimento</label><Input id="niss-birth" v-model="form.birthDate" type="date" required :disabled="!selectedClient" :readonly="!!selectedClient" class="read-only:cursor-default read-only:bg-muted/50" /></div>
-        <div class="rounded-md border bg-muted/30 p-3 text-sm"><p class="font-medium">Referência de origem</p><p class="mt-1 break-all text-muted-foreground">{{ selectedClient ? selectedClient.id : 'Definida após selecionar o cliente' }}</p></div>
+        <div class="rounded-md border bg-muted/30 p-3 text-sm"><p class="font-medium">Processo jurídico</p><p class="mt-1 text-muted-foreground">{{ selectedClient ? 'O UUID do LegalCase será gerado ao criar.' : 'Definido após selecionar o cliente.' }}</p></div>
       </div>
+      <ProcessStakeholderSelector
+        v-if="currentUser"
+        v-model="form.stakeholderUserIds"
+        :creator="{ id: currentUser.id, name: currentUser.name }"
+        :disabled="!selectedClient"
+      />
       <p v-if="formError" class="text-sm text-destructive">{{ formError }}</p>
       <div class="flex justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" @click="isDialogOpen = false">Cancelar</Button><Button type="submit" :disabled="!selectedClient || isCreating">{{ isCreating ? 'Criando...' : 'Criar solicitação' }}</Button></div>
     </form>

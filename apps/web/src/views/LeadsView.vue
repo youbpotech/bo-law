@@ -23,7 +23,8 @@ import WhatsAppIcon from '@/components/icons/WhatsAppIcon.vue'
 import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import Textarea from '@/components/ui/Textarea.vue'
-import { useClients } from '@/composables/useApi'
+import ProcessStakeholderSelector from '@/components/ProcessStakeholderSelector.vue'
+import { useClients, useServices, useSession } from '@/composables/useApi'
 import LeadTemperatureChart from '@/features/leads/LeadTemperatureChart.vue'
 import { useLeads } from '@/features/leads/useLeads'
 import type {
@@ -67,6 +68,8 @@ const {
   resetPage,
 } = useLeads()
 const { clients } = useClients()
+const { services } = useServices()
+const { currentUser } = useSession()
 
 const manualMessage = ref('')
 const actionMessage = ref<string | null>(null)
@@ -104,13 +107,14 @@ const qualificationForm = reactive({
 
 const conversionForm = reactive({
   title: '',
-  serviceType: '',
+  serviceId: '',
   contractedFee: '' as string | number,
   clientId: '',
   clientName: '',
   description: '',
   contractSignedAt: '',
   dueAt: '',
+  stakeholderUserIds: [] as string[],
 })
 
 watch([search, conversationStatus, qualificationLevel, salesStage], resetPage)
@@ -250,13 +254,14 @@ function hydrateConversionForm(lead: Lead) {
   const contactName = lead.name || lead.phone
   Object.assign(conversionForm, {
     title: lead.serviceType ? `${lead.serviceType} — ${contactName}` : `Processo — ${contactName}`,
-    serviceType: lead.serviceType ?? '',
+    serviceId: services.value.find((service) => service.processType === 'general' && service.active)?.id ?? '',
     contractedFee: lead.feeBudget ?? '',
     clientId: lead.clientId ?? '',
     clientName: lead.clientId ? '' : (lead.name ?? ''),
     description: lead.caseSummary ?? '',
     contractSignedAt: '',
     dueAt: '',
+    stakeholderUserIds: [],
   })
   conversionLeadId.value = lead.id
 }
@@ -367,11 +372,11 @@ async function handleConvert() {
   const lead = detail.value?.lead
   if (!lead) return
   const title = conversionForm.title.trim()
-  const serviceType = conversionForm.serviceType.trim()
+  const serviceId = conversionForm.serviceId.trim()
   const contractedFee = Number(conversionForm.contractedFee)
   const clientId = conversionForm.clientId.trim()
   const clientName = conversionForm.clientName.trim()
-  if (!title || !serviceType || !Number.isFinite(contractedFee) || contractedFee <= 0) {
+  if (!title || !serviceId || !Number.isFinite(contractedFee) || contractedFee <= 0) {
     actionMessage.value = 'Informe título, serviço e honorários válidos para converter o lead.'
     return
   }
@@ -381,9 +386,10 @@ async function handleConvert() {
   }
   const input: ConvertLeadInput = {
     title,
-    serviceType,
+    serviceId,
     contractedFee,
     description: nullableText(conversionForm.description),
+    stakeholderUserIds: [...conversionForm.stakeholderUserIds],
     ...(clientId ? { clientId } : { clientName }),
   }
   const contractSignedAt = toIsoDateTime(conversionForm.contractSignedAt)
@@ -790,7 +796,7 @@ async function handleConvert() {
                 <label for="convert-service" class="mb-1.5 block text-xs font-medium"
                   >Serviço contratado *</label
                 >
-                <Input id="convert-service" v-model="conversionForm.serviceType" required />
+                <Select id="convert-service" v-model="conversionForm.serviceId" required><option value="" disabled>Selecione o serviço</option><option v-for="service in services.filter((item) => item.processType === 'general' && item.active)" :key="service.id" :value="service.id">{{ service.name }}</option></Select>
               </div>
               <div>
                 <label for="convert-fee" class="mb-1.5 block text-xs font-medium"
@@ -848,6 +854,12 @@ async function handleConvert() {
                   class="min-h-20"
                 />
               </div>
+              <ProcessStakeholderSelector
+                v-if="currentUser"
+                v-model="conversionForm.stakeholderUserIds"
+                class="md:col-span-2 xl:col-span-3"
+                :creator="{ id: currentUser.id, name: currentUser.name }"
+              />
             </div>
             <div class="mt-5 flex justify-end gap-3 border-t pt-4">
               <Button type="button" variant="ghost" @click="showConvertForm = false"

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, type MaybeRefOrGetter, toValue } from 'vue'
 import { getActiveCompanyId, getAuthToken, setActiveCompanyId } from '@/lib/auth'
+import type { NotificationChannel } from '@/features/notifications/types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -39,6 +40,8 @@ export interface User {
   name: string
   username: string
   email: string | null
+  phone: string | null
+  notificationChannels: NotificationChannel[]
   companyId: number
   root: boolean
   roleRoot: boolean
@@ -106,6 +109,8 @@ export interface UserInput {
   name: string
   username: string
   email?: string
+  phone?: string
+  notificationChannels: NotificationChannel[]
   password?: string
   roleIds: string[]
 }
@@ -116,6 +121,7 @@ export type ResourceKey =
   | 'roles'
   | 'clients'
   | 'companies'
+  | 'services'
   | 'leads'
   | 'cases'
   | 'niss'
@@ -123,6 +129,7 @@ export type ResourceKey =
 
 export interface NissProcess {
   id: string
+  legalCaseId: string
   clientId: string
   requestNumber: string
   email: string
@@ -143,6 +150,7 @@ export interface NissProcess {
 
 export interface AimaProcess {
   id: string
+  legalCaseId: string
   clientId: string
   trackingUrl: string
   processNumber: string | null
@@ -168,6 +176,7 @@ export interface AimaProcess {
 export interface AimaInput {
   clientId: string
   trackingUrl: string
+  stakeholderUserIds: string[]
 }
 
 export interface AimaDocument {
@@ -184,6 +193,7 @@ export interface NissInput {
   requestNumber: string
   email: string
   birthDate: string
+  stakeholderUserIds: string[]
 }
 
 export interface NissDocument {
@@ -384,6 +394,10 @@ async function buscarUsuarios(): Promise<User[]> {
   return authRequest<User[]>('/api/users')
 }
 
+async function buscarUsuario(id: string): Promise<User> {
+  return authRequest<User>(`/api/users/${encodeURIComponent(id)}`)
+}
+
 async function criarUsuario(dados: UserInput): Promise<User> {
   return authRequest<User>('/api/users', {
     method: 'POST',
@@ -427,9 +441,63 @@ export function useUsers() {
     criarUsuario: criarMutation.mutateAsync,
     atualizarUsuario: atualizarMutation.mutateAsync,
     excluirUsuario: excluirMutation.mutateAsync,
+    buscarUsuario,
     isCreating: criarMutation.isPending,
     isUpdating: atualizarMutation.isPending,
     isDeleting: excluirMutation.isPending,
+  }
+}
+
+export type LegalCaseDocument = {
+  id: string
+  fileName: string
+  mimeType: string | null
+}
+
+export type LegalCaseDocuments = {
+  provider: 'botniss' | 'botaima' | null
+  processId: string | null
+  documents: LegalCaseDocument[]
+}
+
+async function buscarDocumentosProcesso(id: string): Promise<LegalCaseDocuments> {
+  return authRequest<LegalCaseDocuments>(`/api/cases/${encodeURIComponent(id)}/documents`)
+}
+
+async function baixarDocumentoProcesso({
+  caseId,
+  fileName,
+}: {
+  caseId: string
+  fileName: string
+}): Promise<NissDocumentDownload> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(fileName)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${getAuthToken() ?? ''}`,
+        ...(getActiveCompanyId() ? { 'X-Company-Id': String(getActiveCompanyId()) } : {}),
+      },
+    },
+  )
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error ?? 'Não foi possível baixar o documento.')
+  }
+  return {
+    blob: await response.blob(),
+    fileName: downloadFileName(response, fileName),
+  }
+}
+
+export function useCaseDocuments() {
+  const documentListMutation = useMutation({ mutationFn: buscarDocumentosProcesso })
+  const documentMutation = useMutation({ mutationFn: baixarDocumentoProcesso })
+  return {
+    buscarDocumentos: documentListMutation.mutateAsync,
+    baixarDocumento: documentMutation.mutateAsync,
+    isLoadingDocuments: documentListMutation.isPending,
+    isDownloadingDocument: documentMutation.isPending,
   }
 }
 
@@ -560,6 +628,19 @@ export function useClients() {
   }
 }
 
+export type ServiceType = { id: string; code: string; name: string; processType: 'general' | 'niss' | 'aima'; description: string | null; active: boolean }
+async function buscarServicos(): Promise<ServiceType[]> { return authRequest<ServiceType[]>('/api/services') }
+export function useServices() {
+  const queryClient = useQueryClient()
+  const query = useQuery({ queryKey: ['services'], queryFn: buscarServicos })
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['services'] })
+  return {
+    services: computed(() => query.data.value || []), isLoading: query.isLoading,
+    criarServico: (data: Partial<ServiceType>) => authRequest<ServiceType>('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then((result) => { invalidate(); return result }),
+    atualizarServico: ({ id, ...data }: Partial<ServiceType> & { id: string }) => authRequest<ServiceType>(`/api/services/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then((result) => { invalidate(); return result }),
+  }
+}
+
 async function buscarNiss(): Promise<NissProcess[]> {
   return authRequest<NissProcess[]>('/api/niss')
 }
@@ -570,6 +651,10 @@ async function criarNiss(dados: NissInput): Promise<NissProcess> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dados),
   })
+}
+
+async function reprocessarNiss(id: string): Promise<NissProcess> {
+  return authRequest<NissProcess>(`/api/niss/${encodeURIComponent(id)}/reprocess`, { method: 'POST' })
 }
 
 async function buscarDossieNiss(id: string): Promise<Record<string, unknown>> {
@@ -647,12 +732,30 @@ export function useNiss() {
   const nissQuery = useQuery({ queryKey: ['niss'], queryFn: buscarNiss })
   const createMutation = useMutation({
     mutationFn: criarNiss,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['niss'] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['niss'] }),
+        queryClient.invalidateQueries({ queryKey: ['cases'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'internal'] }),
+      ])
+    },
   })
   const dossierMutation = useMutation({ mutationFn: buscarDossieNiss })
   const documentsMutation = useMutation({ mutationFn: baixarDocumentosNiss })
   const documentListMutation = useMutation({ mutationFn: buscarDocumentosNiss })
   const singleDocMutation = useMutation({ mutationFn: baixarDocumentoNiss })
+  const reprocessMutation = useMutation({
+    mutationFn: reprocessarNiss,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['niss'] }),
+        queryClient.invalidateQueries({ queryKey: ['cases'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'internal'] }),
+      ])
+    },
+  })
   return {
     processes: computed(() => nissQuery.data.value || []),
     isLoading: nissQuery.isLoading,
@@ -662,11 +765,13 @@ export function useNiss() {
     baixarDocumentos: documentsMutation.mutateAsync,
     buscarDocumentos: documentListMutation.mutateAsync,
     baixarDocumento: singleDocMutation.mutateAsync,
+    reprocessar: reprocessMutation.mutateAsync,
     isCreating: createMutation.isPending,
     isLoadingDossier: dossierMutation.isPending,
     isDownloadingDocuments: documentsMutation.isPending,
     isLoadingDocuments: documentListMutation.isPending,
     isDownloadingDocument: singleDocMutation.isPending,
+    isReprocessing: reprocessMutation.isPending,
     refresh: nissQuery.refetch,
   }
 }
@@ -728,14 +833,28 @@ export function useAima() {
   const aimaQuery = useQuery({ queryKey: ['aima'], queryFn: buscarAima })
   const createMutation = useMutation({
     mutationFn: criarAima,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aima'] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['aima'] }),
+        queryClient.invalidateQueries({ queryKey: ['cases'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'internal'] }),
+      ])
+    },
   })
   const dossierMutation = useMutation({ mutationFn: buscarDossieAima })
   const documentListMutation = useMutation({ mutationFn: buscarDocumentosAima })
   const singleDocMutation = useMutation({ mutationFn: baixarDocumentoAima })
   const reprocessMutation = useMutation({
     mutationFn: reprocessarAima,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aima'] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['aima'] }),
+        queryClient.invalidateQueries({ queryKey: ['cases'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'internal'] }),
+      ])
+    },
   })
   return {
     processes: computed(() => aimaQuery.data.value || []),

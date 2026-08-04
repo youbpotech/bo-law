@@ -30,6 +30,13 @@ import { applyClientProfileInput } from '../client-profile'
 import { parseCompanyFavicon } from '../company-favicon'
 import { parseCompanyBanner } from '../company-banner'
 import { notificationsRouter } from '../notifications/routes'
+import { servicesRouter } from './services'
+import { LegalCaseStakeholder } from '../entities/LegalCaseStakeholder'
+import {
+  parseNotificationChannels,
+  saveNotificationChannelPreferences,
+  validateNotificationChannels,
+} from '../notifications/preferences'
 import {
   createCompanyRole,
   createKeycloakUser,
@@ -93,11 +100,16 @@ function serializeCompany(company: Company) {
 }
 
 function serializeUser(user: User, roleIds: string[] = []) {
+  const notificationChannels =
+    user.notificationChannelPreferences?.filter(({ enabled }) => enabled).map(({ channel }) => channel) ??
+    []
   return {
     id: user.id,
     name: user.name,
     username: user.username,
     email: user.email,
+    phone: user.phone,
+    notificationChannels: notificationChannels.length ? notificationChannels : ['internal'],
     companyId: user.companyId,
     root: user.root,
     roleRoot: user.roleRoot ?? false,
@@ -466,7 +478,7 @@ router.get('/users', requireAuth, async (req, res) => {
   if (!currentUser) return
   const users = await AppDataSource.getRepository(User).find({
     where: { companyId: currentUser.companyId },
-    relations: ['company'],
+    relations: ['company', 'notificationChannelPreferences'],
     order: { name: 'ASC' },
   })
   res.json(
@@ -487,10 +499,19 @@ router.post('/users', requireAuth, async (req, res) => {
   const name = normalizeText(req.body.name)
   const username = normalizeText(req.body.username).toLowerCase()
   const email = normalizeNullableText(req.body.email)
+  const phone = normalizeWhatsappNumber(req.body.phone)
   const password = typeof req.body.password === 'string' ? req.body.password : ''
   const roleIds = Array.isArray(req.body.roleIds)
     ? req.body.roleIds.filter((id: unknown): id is string => typeof id === 'string')
     : []
+  let notificationChannels
+  try {
+    notificationChannels = parseNotificationChannels(req.body.notificationChannels)
+    validateNotificationChannels(notificationChannels, currentUser.company, { email, phone })
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Canais inválidos' })
+    return
+  }
   if (!name || !username || password.length < 8) {
     res
       .status(400)
@@ -512,15 +533,20 @@ router.post('/users', requireAuth, async (req, res) => {
       name,
       username,
       email,
+      phone,
       password: null,
       keycloakId,
       companyId: currentUser.companyId,
       root: false,
     })
-    const saved = await repository.save(user)
+    const saved = await AppDataSource.transaction(async (manager) => {
+      const persisted = await manager.getRepository(User).save(user)
+      await saveNotificationChannelPreferences(manager, persisted.id, notificationChannels)
+      return persisted
+    })
     const complete = await repository.findOneOrFail({
       where: { id: saved.id },
-      relations: ['company'],
+      relations: ['company', 'notificationChannelPreferences'],
     })
     res.status(201).json(serializeUser(complete, roleIds))
   } catch (error) {
@@ -542,13 +568,18 @@ router.get('/users/:id', requireAuth, async (req, res) => {
   if (!currentUser) return
   const user = await AppDataSource.getRepository(User).findOne({
     where: { id: req.params.id, companyId: currentUser.companyId },
-    relations: ['company'],
+    relations: ['company', 'notificationChannelPreferences'],
   })
   if (!user) {
     res.status(404).json({ error: 'Usuário não encontrado' })
     return
   }
-  res.json(serializeUser(user))
+  res.json(
+    serializeUser(
+      user,
+      user.keycloakId ? await getUserRoleIds(user.keycloakId, currentUser.companyId) : [],
+    ),
+  )
 })
 
 router.put('/users/:id', requireAuth, async (req, res) => {
@@ -561,7 +592,7 @@ router.put('/users/:id', requireAuth, async (req, res) => {
   const repository = AppDataSource.getRepository(User)
   const user = await repository.findOne({
     where: { id: req.params.id, companyId: currentUser.companyId },
-    relations: ['company'],
+    relations: ['company', 'notificationChannelPreferences'],
   })
   if (!user) {
     res.status(404).json({ error: 'Usuário não encontrado' })
@@ -573,6 +604,23 @@ router.put('/users/:id', requireAuth, async (req, res) => {
   const roleIds = Array.isArray(req.body.roleIds)
     ? req.body.roleIds.filter((id: unknown): id is string => typeof id === 'string')
     : []
+  const email = normalizeNullableText(req.body.email)
+  const phone = normalizeWhatsappNumber(req.body.phone)
+  let notificationChannels
+  try {
+    const currentChannels =
+      user.notificationChannelPreferences
+        ?.filter(({ enabled }) => enabled)
+        .map(({ channel }) => channel) ?? ['internal']
+    notificationChannels = parseNotificationChannels(
+      req.body.notificationChannels,
+      currentChannels,
+    )
+    validateNotificationChannels(notificationChannels, currentUser.company, { email, phone })
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Canais inválidos' })
+    return
+  }
   if (!name || !username || (password && password.length < 8)) {
     res.status(400).json({
       error: 'Nome e usuário são obrigatórios; a nova senha deve ter ao menos 8 caracteres',
@@ -587,15 +635,24 @@ router.put('/users/:id', requireAuth, async (req, res) => {
     companyId: currentUser.companyId,
     name,
     username,
-    email: normalizeNullableText(req.body.email),
+    email,
     password: password || undefined,
     roleIds,
   })
   user.name = name
   user.username = username
-  user.email = normalizeNullableText(req.body.email)
+  user.email = email
+  user.phone = phone
   try {
-    res.json(serializeUser(await repository.save(user), roleIds))
+    await AppDataSource.transaction(async (manager) => {
+      await manager.getRepository(User).save(user)
+      await saveNotificationChannelPreferences(manager, user.id, notificationChannels)
+    })
+    const complete = await repository.findOneOrFail({
+      where: { id: user.id },
+      relations: ['company', 'notificationChannelPreferences'],
+    })
+    res.json(serializeUser(complete, roleIds))
   } catch (error) {
     if (isDatabaseError(error, '23505')) {
       res.status(409).json({ error: 'Usuário ou e-mail já cadastrado' })
@@ -625,6 +682,14 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
     res.status(404).json({ error: 'Usuário não encontrado' })
     return
   }
+  if (
+    await AppDataSource.getRepository(LegalCaseStakeholder).existsBy({ userId: target.id })
+  ) {
+    res.status(409).json({
+      error: 'Este utilizador participa em processos e não pode ser excluído.',
+    })
+    return
+  }
   if (target.keycloakId) await deleteKeycloakUser(target.keycloakId)
   await repository.delete(target.id)
   res.status(204).send()
@@ -639,6 +704,7 @@ router.get('/resources', requireAuth, async (req, res) => {
     roles: 'Roles',
     clients: 'Clientes',
     companies: 'Empresas',
+    services: 'Serviços',
     leads: 'Leads',
     cases: 'Processos',
     niss: 'NISS',
@@ -851,6 +917,7 @@ router.delete('/clients/:id', requireAuth, async (req, res) => {
 
 router.use(leadsRouter)
 router.use(casesRouter)
+router.use(servicesRouter)
 router.use(dashboardRouter)
 router.use(nissRouter)
 router.use(aimaRouter)
