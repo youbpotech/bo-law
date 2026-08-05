@@ -8,13 +8,26 @@ import { Lead } from './entities/Lead'
 import { LeadAudioProcessing } from './entities/LeadAudioProcessing'
 import { LeadMessage } from './entities/LeadMessage'
 import { LegalCase } from './entities/LegalCase'
+import { Notification } from './entities/Notification'
+import { NotificationDelivery } from './entities/NotificationDelivery'
 import { User } from './entities/User'
+import { UserNotificationChannel } from './entities/UserNotificationChannel'
+import { LegalCaseStakeholder } from './entities/LegalCaseStakeholder'
+import { LegalCaseIntegration } from './entities/LegalCaseIntegration'
+import { ServiceType } from './entities/ServiceType'
 import { CreateLegalBackoffice1784678400000 } from './migrations/1784678400000-CreateLegalBackoffice'
 import { AddCompanyLogo1784764800000 } from './migrations/1784764800000-AddCompanyLogo'
 import { ExpandClientProfile1784851200000 } from './migrations/1784851200000-ExpandClientProfile'
 import { AddKeycloakIdentity1784937600000 } from './migrations/1784937600000-AddKeycloakIdentity'
 import { AddCompanyFavicon1785024000000 } from './migrations/1785024000000-AddCompanyFavicon'
 import { AddGeographyReferences1785110400000 } from './migrations/1785110400000-AddGeographyReferences'
+import { AddClientPortugueseIdentifiers1785196800000 } from './migrations/1785196800000-AddClientPortugueseIdentifiers'
+import { AddCompanyLoginBanner1785283200000 } from './migrations/1785283200000-AddCompanyLoginBanner'
+import { AddOmnichannelNotifications1785369600000 } from './migrations/1785369600000-AddOmnichannelNotifications'
+import { CentralizeLegalCasesAndNotificationPreferences1785801600000 } from './migrations/1785801600000-CentralizeLegalCasesAndNotificationPreferences'
+import { HardenLegalCaseIntegrationClaims1785888000000 } from './migrations/1785888000000-HardenLegalCaseIntegrationClaims'
+import { EnforceLegalCaseCreator1785974400000 } from './migrations/1785974400000-EnforceLegalCaseCreator'
+import { CreateCompanyServiceTypes1786060800000 } from './migrations/1786060800000-CreateCompanyServiceTypes'
 
 config()
 
@@ -43,7 +56,22 @@ export const AppDataSource = new DataSource({
       }),
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
-  entities: [User, Company, Client, Lead, LeadMessage, LeadAudioProcessing, LegalCase, Invoice],
+  entities: [
+    User,
+    Company,
+    Client,
+    Lead,
+    LeadMessage,
+    LeadAudioProcessing,
+    LegalCase,
+    Invoice,
+    Notification,
+    NotificationDelivery,
+    UserNotificationChannel,
+    LegalCaseStakeholder,
+    LegalCaseIntegration,
+    ServiceType,
+  ],
   migrations: [
     CreateLegalBackoffice1784678400000,
     AddCompanyLogo1784764800000,
@@ -51,6 +79,13 @@ export const AppDataSource = new DataSource({
     AddKeycloakIdentity1784937600000,
     AddCompanyFavicon1785024000000,
     AddGeographyReferences1785110400000,
+    AddClientPortugueseIdentifiers1785196800000,
+    AddCompanyLoginBanner1785283200000,
+    AddOmnichannelNotifications1785369600000,
+    CentralizeLegalCasesAndNotificationPreferences1785801600000,
+    HardenLegalCaseIntegrationClaims1785888000000,
+    EnforceLegalCaseCreator1785974400000,
+    CreateCompanyServiceTypes1786060800000,
   ],
   subscribers: [],
 })

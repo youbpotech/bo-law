@@ -17,6 +17,22 @@
     "yes": "Sí",
     "no": "No"
   },
+  "imageCrop": {
+    "requirementsTitle": "Requisitos de la imagen",
+    "chooseFile": "Elegir imagen",
+    "cropTitle": "Ajustar recorte",
+    "cropHelp": "Arrastre la imagen para reposicionarla y use el control inferior para ampliar.",
+    "zoom": "Ampliación",
+    "invalidFile": "Archivo inválido.",
+    "readError": "No fue posible leer el archivo.",
+    "dimensionReadError": "No fue posible leer las dimensiones de la imagen.",
+    "formatError": "El {asset} debe ser PNG, JPEG o WebP.",
+    "sourceSizeError": "La imagen original debe tener como máximo {size} MB.",
+    "sourceDimensionsError": "Use una imagen entre {minWidth} × {minHeight} px y {max} × {max} px.",
+    "outputSizeError": "El {asset} optimizado debe tener como máximo {size} MB.",
+    "cropError": "No fue posible generar el recorte del {asset}.",
+    "invalidAsset": "{asset} inválido."
+  },
   "navigation": {
     "dashboard": "Panel de control",
     "registrations": "Registros",
@@ -25,7 +41,8 @@
     "companies": "Empresas",
     "leads": "Leads",
     "cases": "Procesos",
-    "niss": "Solicitudes NISS"
+    "niss": "Solicitudes NISS",
+    "aima": "Procesos AIMA"
   },
   "dashboard": {
     "title": "Panel de control",
@@ -178,6 +195,23 @@
     "whatsappPlaceholder": "Ej.: +351 912 345 678",
     "whatsappHelp": "Número utilizado para identificar y atender los leads de la empresa.",
     "logo": "Logotipo",
+    "logoAssetName": "logotipo",
+    "loginBanner": "Banner de la pantalla de acceso",
+    "loginBannerAssetName": "banner",
+    "loginBannerPreview": "Vista previa del banner de la pantalla de acceso",
+    "loginBannerHelp": "Imagen mostrada en todo el lateral izquierdo del acceso en pantallas grandes.",
+    "uploadLoginBanner": "Subir banner",
+    "replaceLoginBanner": "Sustituir banner",
+    "removeLoginBanner": "Eliminar banner",
+    "loginBannerDialogTitle": "Subir banner de la pantalla de acceso",
+    "loginBannerDialogDescription": "Elija una imagen de alta resolución y ajuste el recorte del lateral de acceso.",
+    "loginBannerRequirementFormat": "Formato PNG, JPEG o WebP.",
+    "loginBannerRequirementSize": "Imagen original de hasta 15 MB; el resultado optimizado tendrá hasta 2 MB.",
+    "loginBannerRequirementDimensions": "Resolución original mínima de 1600 × 1200 px.",
+    "loginBannerRequirementRatio": "El recorte final tendrá una proporción fija de 4:3.",
+    "loginBannerRequirementDisplay": "El resultado se genera en 1600 × 1200 px y llena todo el lateral izquierdo.",
+    "loginBannerCropReady": "El contenido visible se utilizará como banner de acceso.",
+    "useLoginBanner": "Usar este banner",
     "favicon": "Favicon",
     "faviconPreview": "Vista previa del favicon",
     "faviconHelp": "PNG, JPEG o WebP cuadrado, entre 32 × 32 y 512 × 512 px, con hasta 256 KB.",
@@ -231,6 +265,16 @@
     "system": "Usar tema del sistema (actual: {theme})",
     "darkLabel": "oscuro",
     "lightLabel": "claro"
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "openInbox": "Abrir notificaciones",
+    "unreadCount": "{count} sin leer | {count} sin leer",
+    "empty": "No hay notificaciones.",
+    "acknowledge": "Dar por enterado",
+    "acknowledged": "Enterado",
+    "refresh": "Actualizar notificaciones",
+    "loadError": "No fue posible cargar las notificaciones."
   },
   "profile": {
     "title": "Perfil",

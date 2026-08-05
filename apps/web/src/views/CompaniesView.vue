@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ImageCropDialog from '@/components/ImageCropDialog.vue'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import Input from '@/components/ui/Input.vue'
@@ -32,6 +33,7 @@ const {
 const search = ref('')
 const isDialogOpen = ref(false)
 const isLogoDialogOpen = ref(false)
+const isBannerDialogOpen = ref(false)
 const editingCompany = ref<Company | null>(null)
 const formError = ref('')
 const form = reactive({
@@ -40,30 +42,25 @@ const form = reactive({
   whatsappNumber: '',
   logoDataUrl: undefined as string | null | undefined,
   faviconDataUrl: undefined as string | null | undefined,
+  loginBannerDataUrl: undefined as string | null | undefined,
 })
 const logoPreview = ref<string | null>(null)
 const faviconPreview = ref<string | null>(null)
+const bannerPreview = ref<string | null>(null)
 const faviconError = ref('')
-const pendingLogoDataUrl = ref<string | null>(null)
-const pendingLogoDimensions = ref<{ width: number; height: number } | null>(null)
-const pendingLogoError = ref('')
-const pendingLogoFileName = ref('')
-const cropCanvas = ref<HTMLCanvasElement | null>(null)
-const cropZoom = ref(1)
-const cropPanX = ref(0)
-const cropPanY = ref(0)
-let cropImage: HTMLImageElement | null = null
-let activePointerId: number | null = null
-let lastPointerX = 0
-let lastPointerY = 0
 
 const LOGO_MAX_BYTES = 512 * 1024
 const LOGO_SOURCE_MAX_BYTES = 5 * 1024 * 1024
 const LOGO_SOURCE_MIN_WIDTH = 168
 const LOGO_SOURCE_MIN_HEIGHT = 40
-const LOGO_SOURCE_MAX_DIMENSION = 16000
 const LOGO_OUTPUT_WIDTH = 1024
 const LOGO_OUTPUT_HEIGHT = 256
+const BANNER_MAX_BYTES = 2 * 1024 * 1024
+const BANNER_SOURCE_MAX_BYTES = 15 * 1024 * 1024
+const BANNER_SOURCE_MIN_WIDTH = 1600
+const BANNER_SOURCE_MIN_HEIGHT = 1200
+const BANNER_OUTPUT_WIDTH = 1600
+const BANNER_OUTPUT_HEIGHT = 1200
 const FAVICON_MAX_BYTES = 256 * 1024
 const FAVICON_MIN_SIZE = 32
 const FAVICON_MAX_SIZE = 512
@@ -90,8 +87,10 @@ function resetForm(): void {
   form.whatsappNumber = ''
   form.logoDataUrl = undefined
   form.faviconDataUrl = undefined
+  form.loginBannerDataUrl = undefined
   logoPreview.value = null
   faviconPreview.value = null
+  bannerPreview.value = null
   faviconError.value = ''
   formError.value = ''
 }
@@ -109,8 +108,10 @@ function openEditDialog(company: Company): void {
   form.whatsappNumber = company.whatsappNumber ?? ''
   form.logoDataUrl = undefined
   form.faviconDataUrl = undefined
+  form.loginBannerDataUrl = undefined
   logoPreview.value = company.logoUrl
   faviconPreview.value = company.faviconUrl
+  bannerPreview.value = company.loginBannerUrl
   faviconError.value = ''
   formError.value = ''
   isDialogOpen.value = true
@@ -118,30 +119,18 @@ function openEditDialog(company: Company): void {
 
 function closeDialog(): void {
   closeLogoDialog()
+  isBannerDialogOpen.value = false
   isDialogOpen.value = false
   editingCompany.value = null
   resetForm()
 }
 
 function openLogoDialog(): void {
-  pendingLogoDataUrl.value = null
-  pendingLogoDimensions.value = null
-  pendingLogoError.value = ''
-  pendingLogoFileName.value = ''
-  cropImage = null
-  cropZoom.value = 1
-  cropPanX.value = 0
-  cropPanY.value = 0
   isLogoDialogOpen.value = true
 }
 
 function closeLogoDialog(): void {
   isLogoDialogOpen.value = false
-  pendingLogoDataUrl.value = null
-  pendingLogoDimensions.value = null
-  pendingLogoError.value = ''
-  pendingLogoFileName.value = ''
-  cropImage = null
 }
 
 function formatTheme(theme: string): string {
@@ -152,7 +141,9 @@ function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () =>
-      typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Arquivo inválido'))
+      typeof reader.result === 'string'
+        ? resolve(reader.result)
+        : reject(new Error('Arquivo inválido'))
     reader.onerror = () => reject(new Error('Não foi possível ler o arquivo'))
     reader.readAsDataURL(file)
   })
@@ -167,163 +158,24 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   })
 }
 
-async function createCropImage(image: HTMLImageElement): Promise<HTMLImageElement> {
-  const maxDimension = Math.max(image.naturalWidth, image.naturalHeight)
-  if (maxDimension <= 2400) return image
-
-  const scale = 2400 / maxDimension
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(image.naturalWidth * scale)
-  canvas.height = Math.round(image.naturalHeight * scale)
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error(t('companies.logoCropError'))
-  context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  const resizedImage = await loadImage(canvas.toDataURL('image/webp', 0.92))
-  image.src = ''
-  return resizedImage
-}
-
-function drawCropPreview(): void {
-  const canvas = cropCanvas.value
-  if (!canvas || !cropImage) return
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  const baseScale = Math.max(
-    LOGO_OUTPUT_WIDTH / cropImage.naturalWidth,
-    LOGO_OUTPUT_HEIGHT / cropImage.naturalHeight,
-  )
-  const scale = baseScale * cropZoom.value
-  const width = cropImage.naturalWidth * scale
-  const height = cropImage.naturalHeight * scale
-  const overflowX = Math.max(0, (width - LOGO_OUTPUT_WIDTH) / 2)
-  const overflowY = Math.max(0, (height - LOGO_OUTPUT_HEIGHT) / 2)
-  const x = (LOGO_OUTPUT_WIDTH - width) / 2 + cropPanX.value * overflowX
-  const y = (LOGO_OUTPUT_HEIGHT - height) / 2 + cropPanY.value * overflowY
-
-  context.clearRect(0, 0, LOGO_OUTPUT_WIDTH, LOGO_OUTPUT_HEIGHT)
-  context.fillStyle = '#ffffff'
-  context.fillRect(0, 0, LOGO_OUTPUT_WIDTH, LOGO_OUTPUT_HEIGHT)
-  context.drawImage(cropImage, x, y, width, height)
-}
-
-watch([cropZoom, cropPanX, cropPanY], drawCropPreview)
-
-function handleCropPointerDown(event: PointerEvent): void {
-  activePointerId = event.pointerId
-  lastPointerX = event.clientX
-  lastPointerY = event.clientY
-  cropCanvas.value?.setPointerCapture(event.pointerId)
-}
-
-function handleCropPointerMove(event: PointerEvent): void {
-  if (activePointerId !== event.pointerId || !cropCanvas.value || !cropImage) return
-  const rect = cropCanvas.value.getBoundingClientRect()
-  const scale = Math.max(
-    LOGO_OUTPUT_WIDTH / cropImage.naturalWidth,
-    LOGO_OUTPUT_HEIGHT / cropImage.naturalHeight,
-  ) * cropZoom.value
-  const overflowX = Math.max(0, (cropImage.naturalWidth * scale - LOGO_OUTPUT_WIDTH) / 2)
-  const overflowY = Math.max(0, (cropImage.naturalHeight * scale - LOGO_OUTPUT_HEIGHT) / 2)
-  const deltaX = ((event.clientX - lastPointerX) * LOGO_OUTPUT_WIDTH) / rect.width
-  const deltaY = ((event.clientY - lastPointerY) * LOGO_OUTPUT_HEIGHT) / rect.height
-  if (overflowX > 0) cropPanX.value = Math.max(-1, Math.min(1, cropPanX.value + deltaX / overflowX))
-  if (overflowY > 0) cropPanY.value = Math.max(-1, Math.min(1, cropPanY.value + deltaY / overflowY))
-  lastPointerX = event.clientX
-  lastPointerY = event.clientY
-}
-
-function handleCropPointerUp(event: PointerEvent): void {
-  if (activePointerId !== event.pointerId) return
-  cropCanvas.value?.releasePointerCapture(event.pointerId)
-  activePointerId = null
-}
-
-function canvasToDataUrl(canvas: HTMLCanvasElement): Promise<string> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          reject(new Error(t('companies.logoCropError')))
-          return
-        }
-        if (blob.size > LOGO_MAX_BYTES) {
-          reject(new Error(t('companies.logoSizeError')))
-          return
-        }
-        const reader = new FileReader()
-        reader.onload = () =>
-          typeof reader.result === 'string'
-            ? resolve(reader.result)
-            : reject(new Error(t('companies.logoCropError')))
-        reader.onerror = () => reject(new Error(t('companies.logoCropError')))
-        reader.readAsDataURL(blob)
-      },
-      'image/webp',
-      0.9,
-    )
-  })
-}
-
-async function handleLogoUpload(event: Event): Promise<void> {
-  pendingLogoError.value = ''
-  pendingLogoDataUrl.value = null
-  pendingLogoDimensions.value = null
-  pendingLogoFileName.value = ''
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  try {
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      throw new Error(t('companies.logoFormatError'))
-    }
-    if (file.size > LOGO_SOURCE_MAX_BYTES) throw new Error(t('companies.logoSourceSizeError'))
-
-    const dataUrl = await readFileAsDataUrl(file)
-    const image = await loadImage(dataUrl)
-    const width = image.naturalWidth
-    const height = image.naturalHeight
-    if (
-      width < LOGO_SOURCE_MIN_WIDTH ||
-      height < LOGO_SOURCE_MIN_HEIGHT ||
-      width > LOGO_SOURCE_MAX_DIMENSION ||
-      height > LOGO_SOURCE_MAX_DIMENSION
-    ) {
-      throw new Error(t('companies.logoSourceDimensionsError'))
-    }
-
-    cropImage = await createCropImage(image)
-    pendingLogoDataUrl.value = dataUrl
-    pendingLogoDimensions.value = { width, height }
-    pendingLogoFileName.value = file.name
-    cropZoom.value = 1
-    cropPanX.value = 0
-    cropPanY.value = 0
-    await nextTick()
-    drawCropPreview()
-  } catch (error) {
-    input.value = ''
-    pendingLogoError.value = error instanceof Error ? error.message : t('companies.logoInvalid')
-  }
-}
-
-async function confirmLogo(): Promise<void> {
-  if (!cropCanvas.value || !cropImage) return
-  pendingLogoError.value = ''
-  try {
-    const croppedDataUrl = await canvasToDataUrl(cropCanvas.value)
-    form.logoDataUrl = croppedDataUrl
-    logoPreview.value = croppedDataUrl
-    closeLogoDialog()
-  } catch (error) {
-    pendingLogoError.value = error instanceof Error ? error.message : t('companies.logoCropError')
-  }
+function confirmLogo(dataUrl: string): void {
+  form.logoDataUrl = dataUrl
+  logoPreview.value = dataUrl
 }
 
 function removeLogo(): void {
   form.logoDataUrl = null
   logoPreview.value = null
+}
+
+function confirmBanner(dataUrl: string): void {
+  form.loginBannerDataUrl = dataUrl
+  bannerPreview.value = dataUrl
+}
+
+function removeBanner(): void {
+  form.loginBannerDataUrl = null
+  bannerPreview.value = null
 }
 
 async function handleFaviconUpload(event: Event): Promise<void> {
@@ -369,6 +221,9 @@ async function saveCompany(): Promise<void> {
       whatsappNumber: form.whatsappNumber.trim() || null,
       ...(form.logoDataUrl !== undefined ? { logoDataUrl: form.logoDataUrl } : {}),
       ...(form.faviconDataUrl !== undefined ? { faviconDataUrl: form.faviconDataUrl } : {}),
+      ...(form.loginBannerDataUrl !== undefined
+        ? { loginBannerDataUrl: form.loginBannerDataUrl }
+        : {}),
     }
 
     if (editingCompany.value) {
@@ -531,22 +386,51 @@ function formatDate(value: string): string {
           <Button type="button" variant="outline" size="sm" @click="openLogoDialog">
             {{ logoPreview ? $t('companies.replaceLogo') : $t('companies.uploadLogo') }}
           </Button>
-          <Button
-            v-if="logoPreview"
-            type="button"
-            variant="outline"
-            size="sm"
-            @click="removeLogo"
-          >
+          <Button v-if="logoPreview" type="button" variant="outline" size="sm" @click="removeLogo">
             {{ $t('companies.removeLogo') }}
           </Button>
         </div>
       </div>
 
       <div class="space-y-2">
+        <span class="text-sm font-medium">{{ $t('companies.loginBanner') }}</span>
+        <div v-if="bannerPreview" class="aspect-[4/3] w-48 overflow-hidden rounded-md border">
+          <img
+            :src="bannerPreview"
+            :alt="$t('companies.loginBannerPreview')"
+            class="h-full w-full object-cover"
+          />
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" @click="isBannerDialogOpen = true">
+            {{
+              bannerPreview ? $t('companies.replaceLoginBanner') : $t('companies.uploadLoginBanner')
+            }}
+          </Button>
+          <Button
+            v-if="bannerPreview"
+            type="button"
+            variant="outline"
+            size="sm"
+            @click="removeBanner"
+          >
+            {{ $t('companies.removeLoginBanner') }}
+          </Button>
+        </div>
+        <p class="text-xs text-muted-foreground">{{ $t('companies.loginBannerHelp') }}</p>
+      </div>
+
+      <div class="space-y-2">
         <span class="text-sm font-medium">{{ $t('companies.favicon') }}</span>
-        <div v-if="faviconPreview" class="flex h-16 w-16 items-center justify-center rounded-md border bg-background p-2">
-          <img :src="faviconPreview" :alt="$t('companies.faviconPreview')" class="h-full w-full object-contain" />
+        <div
+          v-if="faviconPreview"
+          class="flex h-16 w-16 items-center justify-center rounded-md border bg-background p-2"
+        >
+          <img
+            :src="faviconPreview"
+            :alt="$t('companies.faviconPreview')"
+            class="h-full w-full object-contain"
+          />
         </div>
         <input
           id="company-favicon-file"
@@ -557,7 +441,13 @@ function formatDate(value: string): string {
         />
         <p class="text-xs text-muted-foreground">{{ $t('companies.faviconHelp') }}</p>
         <p v-if="faviconError" class="text-sm text-destructive">{{ faviconError }}</p>
-        <Button v-if="faviconPreview" type="button" variant="outline" size="sm" @click="removeFavicon">
+        <Button
+          v-if="faviconPreview"
+          type="button"
+          variant="outline"
+          size="sm"
+          @click="removeFavicon"
+        >
           {{ $t('companies.removeFavicon') }}
         </Button>
       </div>
@@ -575,85 +465,49 @@ function formatDate(value: string): string {
     </form>
   </Dialog>
 
-  <Dialog
-    :open="isLogoDialogOpen"
-    class="max-h-[90vh] max-w-xl overflow-y-auto"
-    @update:open="(open) => !open && closeLogoDialog()"
-  >
-    <div class="space-y-1">
-      <h2 class="text-xl font-semibold">{{ $t('companies.logoDialogTitle') }}</h2>
-      <p class="text-sm text-muted-foreground">{{ $t('companies.logoDialogDescription') }}</p>
-    </div>
+  <ImageCropDialog
+    v-model:open="isLogoDialogOpen"
+    :title="$t('companies.logoDialogTitle')"
+    :description="$t('companies.logoDialogDescription')"
+    :asset-name="$t('companies.logoAssetName')"
+    :requirements="[
+      $t('companies.logoRequirementFormat'),
+      $t('companies.logoRequirementSize'),
+      $t('companies.logoRequirementDimensions'),
+      $t('companies.logoRequirementRatio'),
+      $t('companies.logoRequirementDisplay'),
+    ]"
+    :output-width="LOGO_OUTPUT_WIDTH"
+    :output-height="LOGO_OUTPUT_HEIGHT"
+    :source-min-width="LOGO_SOURCE_MIN_WIDTH"
+    :source-min-height="LOGO_SOURCE_MIN_HEIGHT"
+    :source-max-bytes="LOGO_SOURCE_MAX_BYTES"
+    :output-max-bytes="LOGO_MAX_BYTES"
+    :confirm-label="$t('companies.useLogo')"
+    :ready-label="$t('companies.logoCropReady')"
+    @confirm="confirmLogo"
+  />
 
-    <div class="rounded-md border bg-muted/40 p-4 text-sm">
-      <p class="font-medium">{{ $t('companies.logoRequirementsTitle') }}</p>
-      <ul class="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
-        <li>{{ $t('companies.logoRequirementFormat') }}</li>
-        <li>{{ $t('companies.logoRequirementSize') }}</li>
-        <li>{{ $t('companies.logoRequirementDimensions') }}</li>
-        <li>{{ $t('companies.logoRequirementRatio') }}</li>
-        <li>{{ $t('companies.logoRequirementDisplay') }}</li>
-      </ul>
-    </div>
-
-    <div class="space-y-2">
-      <label for="company-logo-file" class="text-sm font-medium">
-        {{ $t('companies.logoChooseFile') }}
-      </label>
-      <input
-        id="company-logo-file"
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-secondary-foreground"
-        @change="handleLogoUpload"
-      />
-    </div>
-
-    <div v-if="pendingLogoDataUrl" class="space-y-3">
-      <div>
-        <p class="text-sm font-medium">{{ $t('companies.logoCropTitle') }}</p>
-        <p class="text-xs text-muted-foreground">{{ $t('companies.logoCropHelp') }}</p>
-      </div>
-      <div class="overflow-hidden rounded-md border bg-muted shadow-inner">
-        <canvas
-          ref="cropCanvas"
-          :width="LOGO_OUTPUT_WIDTH"
-          :height="LOGO_OUTPUT_HEIGHT"
-          class="block aspect-[4/1] w-full cursor-grab touch-none active:cursor-grabbing"
-          @pointerdown="handleCropPointerDown"
-          @pointermove="handleCropPointerMove"
-          @pointerup="handleCropPointerUp"
-          @pointercancel="handleCropPointerUp"
-        />
-      </div>
-      <label for="company-logo-zoom" class="block space-y-1 text-sm">
-        <span class="font-medium">{{ $t('companies.logoZoom') }}</span>
-        <input
-          id="company-logo-zoom"
-          v-model.number="cropZoom"
-          type="range"
-          min="1"
-          max="3"
-          step="0.01"
-          class="w-full accent-primary"
-        />
-      </label>
-      <p class="text-xs text-muted-foreground">
-        {{ pendingLogoFileName }} · {{ pendingLogoDimensions?.width }} ×
-        {{ pendingLogoDimensions?.height }} px
-      </p>
-      <p class="text-sm text-primary">{{ $t('companies.logoCropReady') }}</p>
-    </div>
-
-    <p v-if="pendingLogoError" class="text-sm text-destructive">{{ pendingLogoError }}</p>
-
-    <div class="flex justify-end gap-2 pt-2">
-      <Button type="button" variant="outline" @click="closeLogoDialog">
-        {{ $t('common.cancel') }}
-      </Button>
-      <Button type="button" :disabled="!pendingLogoDataUrl" @click="confirmLogo">
-        {{ $t('companies.useLogo') }}
-      </Button>
-    </div>
-  </Dialog>
+  <ImageCropDialog
+    v-model:open="isBannerDialogOpen"
+    :title="$t('companies.loginBannerDialogTitle')"
+    :description="$t('companies.loginBannerDialogDescription')"
+    :asset-name="$t('companies.loginBannerAssetName')"
+    :requirements="[
+      $t('companies.loginBannerRequirementFormat'),
+      $t('companies.loginBannerRequirementSize'),
+      $t('companies.loginBannerRequirementDimensions'),
+      $t('companies.loginBannerRequirementRatio'),
+      $t('companies.loginBannerRequirementDisplay'),
+    ]"
+    :output-width="BANNER_OUTPUT_WIDTH"
+    :output-height="BANNER_OUTPUT_HEIGHT"
+    :source-min-width="BANNER_SOURCE_MIN_WIDTH"
+    :source-min-height="BANNER_SOURCE_MIN_HEIGHT"
+    :source-max-bytes="BANNER_SOURCE_MAX_BYTES"
+    :output-max-bytes="BANNER_MAX_BYTES"
+    :confirm-label="$t('companies.useLoginBanner')"
+    :ready-label="$t('companies.loginBannerCropReady')"
+    @confirm="confirmBanner"
+  />
 </template>

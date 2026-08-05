@@ -59,6 +59,7 @@ const router = createRouter({
         requiredResource: 'clients',
       },
     },
+    { path: '/services', name: 'services', component: () => import('../views/ServicesView.vue'), meta: { requiresAuth: true, requiredResource: 'services' } },
     {
       path: '/leads',
       name: 'leads',
@@ -82,6 +83,12 @@ const router = createRouter({
       name: 'niss',
       component: () => import('../views/NissView.vue'),
       meta: { requiresAuth: true, requiredResource: 'niss' },
+    },
+    {
+      path: '/aima',
+      name: 'aima',
+      component: () => import('../views/AimaView.vue'),
+      meta: { requiresAuth: true, requiredResource: 'aima' },
     },
   ],
 })
@@ -149,7 +156,7 @@ router.beforeEach(async (to) => {
     const access = await getAccess()
     const resource = typeof to.meta.requiredResource === 'string' ? to.meta.requiredResource : null
     if (!access || (to.meta.requiresRoleRoot && !access.roleRoot) || (resource && !access.root && !access.permissions.includes(resource))) {
-      const destinations: Record<string, string> = { dashboard: '/', users: '/users', roles: '/roles', clients: '/clients', companies: '/companies', leads: '/leads', cases: '/cases', niss: '/niss' }
+      const destinations: Record<string, string> = { dashboard: '/', users: '/users', roles: '/roles', clients: '/clients', companies: '/companies', services: '/services', leads: '/leads', cases: '/cases', niss: '/niss', aima: '/aima' }
       const first = access?.permissions.find((key) => destinations[key])
       return first ? destinations[first] : '/login'
     }

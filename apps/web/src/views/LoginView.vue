@@ -1,57 +1,93 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import { useTheme } from '@/composables/useTheme'
 import { clearAuthToken, setAuthToken } from '@/lib/auth'
-import { getLastSession, rememberLastSession } from '@/lib/last-session'
+import {
+  getLastSession,
+  getSessionForUsername,
+  rememberLastSession,
+  type LastSession,
+} from '@/lib/last-session'
 import { queryClient } from '@/lib/query-client'
 import { setBrowserFavicon } from '@/lib/favicon'
+import {
+  DEFAULT_COMPANY_LOGO_URL,
+  DEFAULT_LOGIN_BANNER_URL,
+  resolveCompanyLogoUrl,
+  resolveLoginBannerUrl,
+} from '@/lib/branding'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 const currentYear = new Date().getFullYear()
-const username = ref('')
+const initialSession = getLastSession()
+const username = ref(initialSession?.username ?? '')
 const password = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
 const companyName = ref<string | null>(null)
-const logoUrl = ref<string | null>(null)
-const { setBrandThemeFromCompany } = useTheme()
+const logoUrl = ref(DEFAULT_COMPANY_LOGO_URL)
+const loginBannerUrl = ref(DEFAULT_LOGIN_BANNER_URL)
+const lastUserName = ref<string | null>(null)
+const { theme, setTheme, setBrandThemeFromCompany } = useTheme()
 const router = useRouter()
 const route = useRoute()
-const welcomeMessage = computed(() =>
-  companyName.value ? `Bem-vindo de volta à ${companyName.value}` : 'Bem-vindo ao Backoffice Jurídico',
-)
+let brandingRequestId = 0
 
-async function loadLastCompany(): Promise<void> {
-  const lastSession = getLastSession()
-  if (!lastSession) {
-    setBrandThemeFromCompany('default')
-    setBrowserFavicon()
+function resetBranding(): void {
+  companyName.value = null
+  logoUrl.value = DEFAULT_COMPANY_LOGO_URL
+  loginBannerUrl.value = DEFAULT_LOGIN_BANNER_URL
+  setBrandThemeFromCompany('default')
+  setBrowserFavicon()
+}
+
+async function applyUserSession(session: LastSession | null): Promise<void> {
+  const requestId = ++brandingRequestId
+  if (!session) {
+    lastUserName.value = null
+    setTheme('system')
+    resetBranding()
     return
   }
-  username.value = lastSession.username
+
+  lastUserName.value = session.userName ?? null
+  setTheme(session.colorTheme ?? 'system')
   try {
-    const response = await fetch(`${API_BASE_URL}/api/branding/companies/${lastSession.companyId}`)
+    const response = await fetch(`${API_BASE_URL}/api/branding/companies/${session.companyId}`)
     if (!response.ok) throw new Error('Empresa não encontrada')
     const company = (await response.json()) as {
       name: string
       theme: string
       logoUrl: string | null
       faviconUrl: string | null
+      loginBannerUrl: string | null
     }
+    if (requestId !== brandingRequestId) return
     companyName.value = company.name
-    logoUrl.value = company.logoUrl ? `${API_BASE_URL}${company.logoUrl}` : null
+    logoUrl.value = company.logoUrl
+      ? `${API_BASE_URL}${company.logoUrl}`
+      : resolveCompanyLogoUrl()
+    loginBannerUrl.value = company.loginBannerUrl
+      ? `${API_BASE_URL}${company.loginBannerUrl}`
+      : resolveLoginBannerUrl()
     setBrandThemeFromCompany(company.theme)
     setBrowserFavicon(company.faviconUrl ? `${API_BASE_URL}${company.faviconUrl}` : null)
   } catch {
-    companyName.value = null
-    logoUrl.value = null
-    setBrandThemeFromCompany('default')
-    setBrowserFavicon()
+    if (requestId !== brandingRequestId) return
+    resetBranding()
   }
 }
+
+watch(
+  username,
+  (login) => {
+    void applyUserSession(getSessionForUsername(login))
+  },
+  { immediate: true },
+)
 
 async function handleLogin(): Promise<void> {
   errorMessage.value = ''
@@ -77,11 +113,17 @@ async function handleLogin(): Promise<void> {
     })
     if (!meResponse.ok) throw new Error('Não foi possível carregar a sessão')
     const user = (await meResponse.json()) as {
+      name: string
       username: string
       companyId: number
       company?: { theme?: string; faviconUrl?: string | null } | null
     }
-    rememberLastSession({ username: user.username, companyId: user.companyId })
+    rememberLastSession({
+      username: user.username,
+      userName: user.name,
+      companyId: user.companyId,
+      colorTheme: theme.value,
+    })
     setBrandThemeFromCompany(user.company?.theme)
     setBrowserFavicon(user.company?.faviconUrl)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
@@ -93,40 +135,73 @@ async function handleLogin(): Promise<void> {
     isLoading.value = false
   }
 }
-
-onMounted(loadLastCompany)
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-muted/40">
-    <main class="mx-auto flex w-full max-w-md flex-1 items-center px-6 py-10">
-      <div class="w-full overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm">
-        <div v-if="logoUrl" class="flex min-h-24 items-center justify-center border-b bg-background p-4">
-          <img :src="logoUrl" :alt="companyName || 'Logomarca da empresa'" class="max-h-20 max-w-full object-contain" />
-        </div>
-        <div class="p-6">
-          <div class="space-y-2">
-            <h1 class="text-2xl font-semibold tracking-tight">{{ welcomeMessage }}</h1>
-            <p class="text-sm text-muted-foreground">Use suas credenciais para acessar o painel.</p>
-          </div>
+  <div class="min-h-screen bg-muted/40 md:grid md:grid-cols-[minmax(0,3fr)_minmax(400px,2fr)]">
+    <div class="relative min-h-56 overflow-hidden bg-primary/10 md:min-h-screen">
+      <img
+        :src="loginBannerUrl"
+        :alt="companyName ? `Banner de ${companyName}` : 'Banner da empresa'"
+        class="absolute inset-0 h-full w-full object-cover"
+      />
+    </div>
 
-          <form class="mt-6 space-y-4" @submit.prevent="handleLogin">
-            <div class="space-y-2">
-              <label for="username" class="text-sm font-medium">Usuário</label>
-              <Input id="username" v-model="username" type="text" autocomplete="username" required />
+    <div class="flex min-h-[calc(100vh-14rem)] flex-col bg-muted/40 md:min-h-screen">
+      <main class="mx-auto flex w-full max-w-md flex-1 items-center px-6 py-10">
+        <div
+          class="w-full overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm"
+        >
+          <div
+            class="flex min-h-24 items-center justify-center border-b bg-background p-4"
+          >
+            <img
+              :src="logoUrl"
+              :alt="companyName || 'Logomarca da empresa'"
+              class="max-h-20 max-w-full object-contain"
+            />
+          </div>
+          <div class="p-6">
+            <div>
+              <h1 class="text-2xl font-semibold tracking-tight">Bem vindo de volta</h1>
+              <p v-if="lastUserName" class="mt-1 text-xl font-semibold tracking-tight">
+                {{ lastUserName }}
+              </p>
             </div>
-            <div class="space-y-2">
-              <label for="password" class="text-sm font-medium">Senha</label>
-              <Input id="password" v-model="password" type="password" autocomplete="current-password" required autofocus />
-            </div>
-            <p v-if="errorMessage" class="text-sm text-destructive">{{ errorMessage }}</p>
-            <Button type="submit" class="w-full" :disabled="isLoading">{{ isLoading ? 'Entrando...' : 'Entrar' }}</Button>
-          </form>
+
+            <form class="mt-6 space-y-4" @submit.prevent="handleLogin">
+              <div class="space-y-2">
+                <label for="username" class="text-sm font-medium">Usuário</label>
+                <Input
+                  id="username"
+                  v-model="username"
+                  type="text"
+                  autocomplete="username"
+                  required
+                />
+              </div>
+              <div class="space-y-2">
+                <label for="password" class="text-sm font-medium">Senha</label>
+                <Input
+                  id="password"
+                  v-model="password"
+                  type="password"
+                  autocomplete="current-password"
+                  required
+                  autofocus
+                />
+              </div>
+              <p v-if="errorMessage" class="text-sm text-destructive">{{ errorMessage }}</p>
+              <Button type="submit" class="w-full" :disabled="isLoading">
+                {{ isLoading ? 'Entrando...' : 'Entrar' }}
+              </Button>
+            </form>
+          </div>
         </div>
-      </div>
-    </main>
-    <footer class="border-t bg-background/80 px-6 py-3 text-center text-xs text-muted-foreground">
-      Copyright YouBPO - {{ currentYear }} - v. 0.1
-    </footer>
+      </main>
+      <footer class="border-t bg-background/80 px-6 py-3 text-center text-xs text-muted-foreground">
+        Copyright YouBPO - {{ currentYear }} - v. 0.1
+      </footer>
+    </div>
   </div>
 </template>

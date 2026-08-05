@@ -6,11 +6,13 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   FileCheck2,
+  FolderOpen,
   Pencil,
   Plus,
   Search,
   WalletCards,
 } from 'lucide-vue-next'
+import { useRoute } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import Input from '@/components/ui/Input.vue'
@@ -22,7 +24,9 @@ import TableBody from '@/components/ui/TableBody.vue'
 import TableRow from '@/components/ui/TableRow.vue'
 import TableHead from '@/components/ui/TableHead.vue'
 import TableCell from '@/components/ui/TableCell.vue'
-import { useClients } from '@/composables/useApi'
+import ProcessStakeholderSelector from '@/components/ProcessStakeholderSelector.vue'
+import LegalCaseDocumentsModal from '@/components/LegalCaseDocumentsModal.vue'
+import { useCaseDocuments, useClients, useServices, useSession, type LegalCaseDocument } from '@/composables/useApi'
 import { useCases } from '@/features/cases/useCases'
 import type {
   CreateCaseInput,
@@ -34,8 +38,12 @@ import type {
 
 const { t, locale } = useI18n()
 const { clients } = useClients()
+const { services } = useServices()
+const { currentUser } = useSession()
+const route = useRoute()
 const { cases, isLoading, error, createCase, updateCase, updateInvoice, isCreating, isUpdating } =
   useCases()
+const { buscarDocumentos, baixarDocumento, isLoadingDocuments } = useCaseDocuments()
 
 const stages: LegalCaseStage[] = [
   'awaiting_initial_payment',
@@ -55,26 +63,51 @@ const isDialogOpen = ref(false)
 const editingCase = ref<LegalCase | null>(null)
 const formError = ref('')
 const actionError = ref('')
+const isDocumentsOpen = ref(false)
+const documents = ref<LegalCaseDocument[]>([])
+const documentsCase = ref<LegalCase | null>(null)
+const documentsError = ref('')
+const hasDocumentIntegration = ref(false)
 const form = reactive({
   clientId: '',
   leadId: '',
   title: '',
-  serviceType: '',
+  serviceId: '',
   description: '',
   contractedFee: '',
+  stakeholderUserIds: [] as string[],
 })
 
 const filteredCases = computed(() => {
   const term = search.value.trim().toLocaleLowerCase()
+  const stakeholderId = typeof route.query.stakeholder === 'string' ? route.query.stakeholder : ''
   return cases.value.filter((legalCase) => {
     const matchesStage = !stageFilter.value || legalCase.stage === stageFilter.value
+    const matchesStakeholder =
+      !stakeholderId || legalCase.stakeholders?.some(({ userId }) => userId === stakeholderId)
     const matchesSearch =
       !term ||
-      [legalCase.title, legalCase.serviceType, legalCase.client?.name, legalCase.lead?.name].some(
+      [
+        legalCase.title,
+        legalCase.service?.name,
+        legalCase.client?.name,
+        legalCase.client?.surname,
+        legalCase.lead?.name,
+      ].some(
         (value) => value?.toLocaleLowerCase().includes(term),
       )
-    return matchesStage && matchesSearch
+    return matchesStage && matchesStakeholder && matchesSearch
   })
+})
+
+const formCreator = computed(() => {
+  if (editingCase.value) {
+    return {
+      id: editingCase.value.createdByUserId,
+      name: editingCase.value.createdByUser?.name || 'Criador do processo',
+    }
+  }
+  return currentUser.value ? { id: currentUser.value.id, name: currentUser.value.name } : null
 })
 
 function resetForm(): void {
@@ -82,9 +115,10 @@ function resetForm(): void {
   form.clientId = clients.value[0]?.id ?? ''
   form.leadId = ''
   form.title = ''
-  form.serviceType = ''
+  form.serviceId = services.value.find((service) => service.processType === 'general' && service.active)?.id ?? ''
   form.description = ''
   form.contractedFee = ''
+  form.stakeholderUserIds = []
   formError.value = ''
 }
 
@@ -98,9 +132,12 @@ function openEditDialog(legalCase: LegalCase): void {
   form.clientId = legalCase.clientId
   form.leadId = legalCase.leadId ?? ''
   form.title = legalCase.title
-  form.serviceType = legalCase.serviceType
+  form.serviceId = legalCase.serviceId
   form.description = legalCase.description ?? ''
   form.contractedFee = String(legalCase.contractedFee)
+  form.stakeholderUserIds = (legalCase.stakeholders ?? [])
+    .filter(({ role }) => role === 'stakeholder')
+    .map(({ userId }) => userId)
   formError.value = ''
   isDialogOpen.value = true
 }
@@ -118,8 +155,9 @@ async function save(): Promise<void> {
         id: editingCase.value.id,
         input: {
           title: form.title.trim(),
-          serviceType: form.serviceType.trim(),
+          serviceId: form.serviceId,
           description: form.description.trim() || null,
+          stakeholderUserIds: [...form.stakeholderUserIds],
         },
       })
     } else {
@@ -127,15 +165,37 @@ async function save(): Promise<void> {
         clientId: form.clientId,
         leadId: form.leadId.trim() || null,
         title: form.title.trim(),
-        serviceType: form.serviceType.trim(),
+        serviceId: form.serviceId,
         description: form.description.trim() || null,
         contractedFee: form.contractedFee.trim(),
+        stakeholderUserIds: [...form.stakeholderUserIds],
       }
       await createCase(input)
     }
     closeDialog()
   } catch (caughtError) {
     formError.value = caughtError instanceof Error ? caughtError.message : t('cases.saveError')
+  }
+}
+
+function clientName(legalCase: LegalCase): string {
+  return [legalCase.client?.name, legalCase.client?.surname].filter(Boolean).join(' ') || '—'
+}
+
+async function openDocuments(legalCase: LegalCase): Promise<void> {
+  documentsCase.value = legalCase
+  documents.value = []
+  documentsError.value = ''
+  hasDocumentIntegration.value = Boolean(
+    legalCase.integrations?.some(({ externalProcessId }) => externalProcessId),
+  )
+  isDocumentsOpen.value = true
+  try {
+    const result = await buscarDocumentos(legalCase.id)
+    documents.value = result.documents
+    hasDocumentIntegration.value = Boolean(result.provider)
+  } catch (error) {
+    documentsError.value = error instanceof Error ? error.message : 'Não foi possível listar os documentos.'
   }
 }
 
@@ -245,27 +305,25 @@ function formatDate(value: string | null): string {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{{ $t('cases.case') }}</TableHead>
-            <TableHead>{{ $t('cases.client') }}</TableHead>
+            <TableHead>Processo</TableHead>
             <TableHead>{{ $t('cases.stage') }}</TableHead>
-            <TableHead>{{ $t('cases.documents') }}</TableHead>
             <TableHead>{{ $t('cases.invoices') }}</TableHead>
             <TableHead class="text-right">{{ $t('common.actions') }}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           <TableRow v-if="isLoading">
-            <TableCell colspan="6" class="text-center text-muted-foreground">{{
+            <TableCell colspan="4" class="text-center text-muted-foreground">{{
               $t('common.loading')
             }}</TableCell>
           </TableRow>
           <TableRow v-else-if="error">
-            <TableCell colspan="6" class="text-center text-destructive">
+            <TableCell colspan="4" class="text-center text-destructive">
               {{ error instanceof Error ? error.message : $t('cases.loadError') }}
             </TableCell>
           </TableRow>
           <TableRow v-else-if="!filteredCases.length">
-            <TableCell colspan="6" class="py-10 text-center text-muted-foreground">{{
+            <TableCell colspan="4" class="py-10 text-center text-muted-foreground">{{
               $t('cases.empty')
             }}</TableCell>
           </TableRow>
@@ -274,23 +332,19 @@ function formatDate(value: string | null): string {
               <div class="flex gap-3">
                 <BriefcaseBusiness class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                 <div>
-                  <p class="font-semibold">{{ legalCase.title }}</p>
-                  <p class="mt-1 text-xs text-muted-foreground">{{ legalCase.serviceType }}</p>
-                  <p
-                    v-if="legalCase.description"
-                    class="line-clamp-2 text-xs text-muted-foreground"
-                  >
-                    {{ legalCase.description }}
-                  </p>
+                  <p class="text-xs font-medium text-muted-foreground">Tipo: {{ legalCase.service?.name || '—' }}</p>
+                  <p class="font-semibold">{{ clientName(legalCase) }}</p>
+                  <p class="mt-1 line-clamp-2 text-xs text-muted-foreground">Descrição: {{ legalCase.description || '—' }}</p>
                   <p class="mt-2 text-xs">{{ formatMoney(legalCase.contractedFee) }}</p>
+                  <p class="mt-2 text-xs text-muted-foreground">
+                    Criador: {{ legalCase.createdByUser?.name || '—' }}
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    Notificados:
+                    {{ legalCase.stakeholders?.map(({ user }) => user.name).join(', ') || legalCase.createdByUser?.name || '—' }}
+                  </p>
                 </div>
               </div>
-            </TableCell>
-            <TableCell class="min-w-44">
-              <p class="font-medium">{{ legalCase.client?.name || '—' }}</p>
-              <p class="text-xs text-muted-foreground">
-                {{ legalCase.client?.email || legalCase.client?.phone || '' }}
-              </p>
             </TableCell>
             <TableCell class="min-w-56">
               <span class="inline-flex rounded-full border bg-muted px-3 py-1 text-xs font-medium">
@@ -299,22 +353,6 @@ function formatDate(value: string | null): string {
               <p class="mt-2 text-xs text-muted-foreground">
                 {{ $t('cases.updatedAt') }}: {{ formatDate(legalCase.updatedAt) }}
               </p>
-            </TableCell>
-            <TableCell>
-              <button
-                type="button"
-                :disabled="isUpdating"
-                class="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50"
-                @click="toggleDocuments(legalCase)"
-              >
-                <FileCheck2
-                  :class="[
-                    'h-4 w-4',
-                    legalCase.documentsComplete ? 'text-emerald-600' : 'text-muted-foreground',
-                  ]"
-                />
-                {{ legalCase.documentsComplete ? $t('cases.complete') : $t('cases.incomplete') }}
-              </button>
             </TableCell>
             <TableCell class="min-w-64">
               <div v-if="legalCase.invoices?.length" class="space-y-2">
@@ -349,12 +387,39 @@ function formatDate(value: string | null): string {
             </TableCell>
             <TableCell>
               <div class="flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Documentos"
+                  aria-label="Documentos"
+                  :disabled="isLoadingDocuments"
+                  @click="openDocuments(legalCase)"
+                >
+                  <FolderOpen class="h-4 w-4" />
+                  <span class="sr-only">Documentos</span>
+                </Button>
+                <Button
+                  v-if="legalCase.caseType === 'general'"
+                  size="sm"
+                  variant="outline"
+                  :disabled="isUpdating"
+                  :title="legalCase.documentsComplete ? $t('cases.complete') : $t('cases.incomplete')"
+                  @click="toggleDocuments(legalCase)"
+                >
+                  <FileCheck2
+                    :class="[
+                      'h-4 w-4',
+                      legalCase.documentsComplete ? 'text-emerald-600' : 'text-muted-foreground',
+                    ]"
+                  />
+                  <span class="sr-only">{{ legalCase.documentsComplete ? $t('cases.complete') : $t('cases.incomplete') }}</span>
+                </Button>
                 <Button variant="outline" size="sm" @click="openEditDialog(legalCase)">
                   <Pencil class="h-4 w-4" />
                   <span class="sr-only">{{ $t('common.edit') }}</span>
                 </Button>
                 <Button
-                  v-if="getNextStage(legalCase)"
+                  v-if="legalCase.caseType === 'general' && getNextStage(legalCase)"
                   size="sm"
                   :disabled="isUpdating"
                   :title="
@@ -400,7 +465,7 @@ function formatDate(value: string | null): string {
           <Select id="case-client" v-model="form.clientId" required>
             <option value="" disabled>{{ $t('cases.selectClient') }}</option>
             <option v-for="client in clients" :key="client.id" :value="client.id">
-              {{ client.name }}
+              {{ [client.name, client.surname].filter(Boolean).join(' ') }}
             </option>
           </Select>
         </div>
@@ -419,7 +484,10 @@ function formatDate(value: string | null): string {
           <label for="case-service" class="text-sm font-medium">{{
             $t('cases.serviceType')
           }}</label>
-          <Input id="case-service" v-model="form.serviceType" required maxlength="255" />
+          <Select id="case-service" v-model="form.serviceId" required :disabled="Boolean(editingCase && editingCase.caseType !== 'general')">
+            <option value="" disabled>Selecione o serviço</option>
+            <option v-for="service in services.filter((item) => item.processType === 'general' && (item.active || item.id === form.serviceId))" :key="service.id" :value="service.id">{{ service.name }}</option>
+          </Select>
         </div>
 
         <div class="space-y-2 sm:col-span-2">
@@ -446,6 +514,12 @@ function formatDate(value: string | null): string {
         </div>
       </div>
 
+      <ProcessStakeholderSelector
+        v-if="formCreator"
+        v-model="form.stakeholderUserIds"
+        :creator="formCreator"
+      />
+
       <p v-if="formError" class="text-sm text-destructive">{{ formError }}</p>
 
       <div class="flex justify-end gap-2 border-t pt-4">
@@ -458,4 +532,16 @@ function formatDate(value: string | null): string {
       </div>
     </form>
   </Dialog>
+
+  <LegalCaseDocumentsModal
+    :open="isDocumentsOpen"
+    :case-id="documentsCase?.id || ''"
+    :case-title="documentsCase?.title || ''"
+    :documents="documents"
+    :has-integration="hasDocumentIntegration"
+    :is-loading="isLoadingDocuments"
+    :error="documentsError"
+    :baixar-documento="baixarDocumento"
+    @update:open="(open) => !open && (isDocumentsOpen = false)"
+  />
 </template>

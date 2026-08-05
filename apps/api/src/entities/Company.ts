@@ -10,6 +10,7 @@ import { Client } from './Client'
 import { LegalCase } from './LegalCase'
 import { Lead } from './Lead'
 import { User } from './User'
+import { ServiceType } from './ServiceType'
 
 export const DEFAULT_DASHBOARD_WIDGETS = [
   'totalLeads',
@@ -55,6 +56,12 @@ export class Company {
   @Column({ name: 'favicon_mime_type', type: 'varchar', length: 30, nullable: true })
   faviconMimeType!: string | null
 
+  @Column({ name: 'banner_login', type: 'bytea', nullable: true, select: false })
+  loginBanner!: Buffer | null
+
+  @Column({ name: 'banner_login_mime_type', type: 'varchar', length: 30, nullable: true })
+  loginBannerMimeType!: string | null
+
   @Column({ name: 'whatsapp_number', type: 'varchar', length: 40, nullable: true })
   whatsappNumber!: string | null
 
@@ -82,4 +89,7 @@ export class Company {
 
   @OneToMany(() => LegalCase, (legalCase) => legalCase.company)
   legalCases!: LegalCase[]
+
+  @OneToMany(() => ServiceType, (serviceType) => serviceType.company)
+  serviceTypes!: ServiceType[]
 }

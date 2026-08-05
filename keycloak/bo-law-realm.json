@@ -47,7 +47,8 @@
         { "name": "companies", "description": "Gestão de empresas" },
         { "name": "leads", "description": "Processo de Leads" },
         { "name": "cases", "description": "Processo jurídico" },
-        { "name": "niss", "description": "Processo NISS" }
+        { "name": "niss", "description": "Processo NISS" },
+        { "name": "aima", "description": "Processos AIMA" }
       ]
     }
   },

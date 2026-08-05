@@ -16,6 +16,10 @@ describe('applyClientProfileInput', () => {
       birthDistrictId: '11',
       mobileCountryCode: '+351',
       mobile: '912345678',
+      niss: '12345678901',
+      snsUserNumber: '123456789',
+      arNumber: 'ab12cd345',
+      citizenCardNumber: '000000000zz4',
     })
 
     expect(client.surname).toBe('Silva')
@@ -23,6 +27,10 @@ describe('applyClientProfileInput', () => {
     expect(client.nationalityCountry).toBe('BR')
     expect(client.birthDistrictId).toBe(11)
     expect(client.mobile).toBe('912345678')
+    expect(client.niss).toBe('12345678901')
+    expect(client.snsUserNumber).toBe('123456789')
+    expect(client.arNumber).toBe('AB12CD345')
+    expect(client.citizenCardNumber).toBe('000000000ZZ4')
   })
 
   it('rejeita tipo fiscal estrangeiro fora do catálogo', () => {
@@ -38,5 +46,20 @@ describe('applyClientProfileInput', () => {
     expect(() => applyClientProfileInput(new Client(), { residenceDistrictId: 0 })).toThrow(
       'Distrito de residência inválido',
     )
+  })
+
+  it('rejeita identificadores portugueses com formato ou controlo inválido', () => {
+    expect(() => applyClientProfileInput(new Client(), { niss: '123' })).toThrow(
+      'NISS deve conter exatamente 11 dígitos',
+    )
+    expect(() => applyClientProfileInput(new Client(), { snsUserNumber: '12345678A' })).toThrow(
+      'Número de utente (SNS) deve conter exatamente 9 dígitos',
+    )
+    expect(() => applyClientProfileInput(new Client(), { arNumber: '1234-6789' })).toThrow(
+      'Número AR deve conter exatamente 9 caracteres alfanuméricos',
+    )
+    expect(() =>
+      applyClientProfileInput(new Client(), { citizenCardNumber: '000000000ZZ5' }),
+    ).toThrow('N.º do Cartão de Cidadão possui dígito de controlo inválido')
   })
 })

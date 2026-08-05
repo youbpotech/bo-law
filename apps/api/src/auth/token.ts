@@ -6,9 +6,11 @@ export const RESOURCE_KEYS = [
   'roles',
   'clients',
   'companies',
+  'services',
   'leads',
   'cases',
   'niss',
+  'aima',
 ] as const
 export type ResourceKey = (typeof RESOURCE_KEYS)[number]
 

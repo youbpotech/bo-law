@@ -26,10 +26,27 @@ export class Client {
   @Column({ name: 'nif_pt', type: 'varchar', length: 20, nullable: true })
   portugueseTaxId!: string | null
 
+  @Column({ name: 'niss', type: 'varchar', length: 11, nullable: true })
+  niss!: string | null
+
+  @Column({ name: 'numero_utente_sns', type: 'varchar', length: 9, nullable: true })
+  snsUserNumber!: string | null
+
+  @Column({ name: 'numero_ar', type: 'varchar', length: 9, nullable: true })
+  arNumber!: string | null
+
+  @Column({ name: 'numero_cartao_cidadao', type: 'varchar', length: 12, nullable: true })
+  citizenCardNumber!: string | null
+
   @Column({ name: 'identificacao_fiscal_estrangeira', type: 'varchar', length: 20, nullable: true })
   foreignTaxId!: string | null
 
-  @Column({ name: 'chave_estrangeira_tipo_identificacao_fiscal', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: 'chave_estrangeira_tipo_identificacao_fiscal',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
   foreignTaxIdType!: string | null
 
   @Column({ name: 'data_nascimento', type: 'date', nullable: true })

@@ -5,6 +5,7 @@ import {
   fileNameFromContentDisposition,
   listNissProcesses,
   mapNissProcess,
+  reprocessNissProcess,
 } from './niss-client'
 
 afterEach(() => {
@@ -18,7 +19,7 @@ describe('cliente da API BotNiss', () => {
     expect(
       mapNissProcess({
         id_solicitacao: '12',
-        id_referencia_origem: 'cliente-1',
+        id_referencia_origem: 'legal-case-1',
         id_pedido_niss: '106002',
         email: 'cliente@example.com',
         data_nascimento: '1990-12-31T00:00:00.000Z',
@@ -32,7 +33,7 @@ describe('cliente da API BotNiss', () => {
       }),
     ).toMatchObject({
       id: '12',
-      clientId: 'cliente-1',
+      sourceReference: 'legal-case-1',
       requestNumber: '106002',
       birthDate: '1990-12-31',
       operationalStatusName: 'CONCLUIDO',
@@ -45,7 +46,7 @@ describe('cliente da API BotNiss', () => {
     expect(
       mapNissProcess({
         id_solicitacao: '12',
-        id_referencia_origem: 'cliente-1',
+        id_referencia_origem: 'legal-case-1',
         id_pedido_niss: '106002',
         email: 'cliente@example.com',
         data_nascimento: '1990-12-31T00:00:00.000Z',
@@ -67,7 +68,7 @@ describe('cliente da API BotNiss', () => {
     expect(
       mapNissProcess({
         id_solicitacao: '12',
-        id_referencia_origem: 'cliente-1',
+        id_referencia_origem: 'legal-case-1',
         id_pedido_niss: '106002',
         email: 'cliente@example.com',
         data_nascimento: '1990-12-31T00:00:00.000Z',
@@ -85,14 +86,14 @@ describe('cliente da API BotNiss', () => {
     })
   })
 
-  it('envia a referência do cliente e a origem bo-law na criação', async () => {
+  it('envia a referência do LegalCase e preserva o cliente na metadata de criação', async () => {
     process.env.BOTNISS_API_URL = 'http://botniss.test'
     process.env.BOTNISS_API_KEY = 'secret'
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           id_solicitacao: '1',
-          id_referencia_origem: 'client-uuid',
+          id_referencia_origem: 'legal-case-uuid',
           id_pedido_niss: '106002',
           email: 'cliente@example.com',
           data_nascimento: '1990-12-31',
@@ -110,6 +111,7 @@ describe('cliente da API BotNiss', () => {
     await createNissProcess({
       companyId: 4,
       clientId: 'client-uuid',
+      legalCaseId: 'legal-case-uuid',
       requestNumber: '106002',
       email: 'cliente@example.com',
       birthDate: '1990-12-31',
@@ -118,8 +120,13 @@ describe('cliente da API BotNiss', () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect(fetchMock.mock.calls[0][0]).toBe('http://botniss.test/api/v1/processos')
     expect(JSON.parse(String(init.body))).toMatchObject({
-      id_referencia_origem: 'client-uuid',
-      metadados: { origem: 'bo-law', empresa_id: 4, cliente_id: 'client-uuid' },
+      id_referencia_origem: 'legal-case-uuid',
+      metadados: {
+        origem: 'bo-law',
+        empresa_id: 4,
+        cliente_id: 'client-uuid',
+        legal_case_id: 'legal-case-uuid',
+      },
     })
   })
 
@@ -131,6 +138,38 @@ describe('cliente da API BotNiss', () => {
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ dados: [] }), { status: 200 })),
     )
     await expect(listNissProcesses()).resolves.toEqual([])
+  })
+
+  it('solicita a reconsulta pela rota do BotNiss', async () => {
+    process.env.BOTNISS_API_URL = 'http://botniss.test'
+    process.env.BOTNISS_API_KEY = 'secret'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id_solicitacao: '12',
+          id_referencia_origem: 'legal-case-1',
+          id_pedido_niss: '106002',
+          email: 'cliente@example.com',
+          data_nascimento: '1990-12-31',
+          status_operacional: 0,
+          status_operacional_nome: 'A_CONSULTAR',
+          quantidade_tentativas: 0,
+          criado_em: '2026-07-22T10:00:00Z',
+          atualizado_em: '2026-07-22T10:00:00Z',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(reprocessNissProcess('12')).resolves.toMatchObject({
+      id: '12',
+      operationalStatusName: 'A_CONSULTAR',
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://botniss.test/api/v1/processos/12/reprocessar',
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 
   it('baixa o ficheiro pela rota documentada da API BotNiss', async () => {

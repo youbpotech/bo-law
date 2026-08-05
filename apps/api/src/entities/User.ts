@@ -5,9 +5,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm'
 import { Company } from './Company'
+import { UserNotificationChannel } from './UserNotificationChannel'
+import { LegalCaseStakeholder } from './LegalCaseStakeholder'
 
 @Entity({ name: 'users', schema: 'bo' })
 export class User {
@@ -22,6 +25,9 @@ export class User {
 
   @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
   email!: string | null
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  phone!: string | null
 
   @Column({ type: 'varchar', length: 255, select: false, nullable: true })
   password!: string | null
@@ -44,6 +50,12 @@ export class User {
   @ManyToOne(() => Company, (company) => company.users, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'company_id' })
   company!: Company
+
+  @OneToMany(() => UserNotificationChannel, (preference) => preference.user)
+  notificationChannelPreferences!: UserNotificationChannel[]
+
+  @OneToMany(() => LegalCaseStakeholder, (stakeholder) => stakeholder.user)
+  caseStakeholdings!: LegalCaseStakeholder[]
 
   permissions?: string[]
   roleRoot?: boolean

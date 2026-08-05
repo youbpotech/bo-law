@@ -83,6 +83,7 @@
           <div class="flex items-center space-x-2">
             <LanguageSelector v-if="false" />
             <ThemeToggle />
+            <NotificationInbox />
             <DropdownMenu v-model="isProfileMenuOpen" align="end">
               <template #trigger="{ toggle }">
                 <Button
@@ -164,11 +165,13 @@ import {
   DollarSign,
   Scale,
   ShieldCheck,
+  BriefcaseBusiness,
 } from 'lucide-vue-next'
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
 import Button from '@/components/ui/Button.vue'
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
+import NotificationInbox from '@/components/NotificationInbox.vue'
 import LanguageSelector from '@/components/ui/LanguageSelector.vue'
 import Breadcrumb from '@/components/ui/Breadcrumb.vue'
 import BreadcrumbItem from '@/components/ui/BreadcrumbItem.vue'
@@ -180,14 +183,15 @@ import { clearAuthToken } from '@/lib/auth'
 import { queryClient } from '@/lib/query-client'
 import { useCompanies, useSession, type ResourceKey } from '@/composables/useApi'
 import { useTheme } from '@/composables/useTheme'
-import { rememberLastSession } from '@/lib/last-session'
+import { getSessionForUsername, rememberLastSession } from '@/lib/last-session'
 import { setBrowserFavicon } from '@/lib/favicon'
 import SocialSecurityIcon from '@/components/icons/SocialSecurityIcon.vue'
+import AimaFaviconIcon from '@/components/icons/AimaFaviconIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-const { setBrandThemeFromCompany } = useTheme()
+const { theme, setTheme, setBrandThemeFromCompany } = useTheme()
 const { currentUser, alternarEmpresa, isSwitchingCompany } = useSession()
 const canLoadCompanies = computed(() => !!currentUser.value?.root)
 const { companies, error: companiesError } = useCompanies(canLoadCompanies)
@@ -263,33 +267,77 @@ watch(
 )
 
 watch(
-  () => [currentUser.value?.username, currentUser.value?.companyId] as const,
-  ([username, companyId]) => {
-    if (username && companyId) rememberLastSession({ username, companyId })
+  () =>
+    [currentUser.value?.username, currentUser.value?.name, currentUser.value?.companyId] as const,
+  ([username, userName, companyId]) => {
+    if (username && userName && companyId) {
+      const storedTheme = getSessionForUsername(username)?.colorTheme
+      if (storedTheme) setTheme(storedTheme)
+      rememberLastSession({
+        username,
+        userName,
+        companyId,
+        colorTheme: storedTheme ?? theme.value,
+      })
+    }
   },
   { immediate: true },
 )
 
-const hasPermission = (key: ResourceKey) => Boolean(currentUser.value?.root || currentUser.value?.permissions?.includes(key))
+watch(theme, (colorTheme) => {
+  const user = currentUser.value
+  if (!user?.username || !user.name || !user.companyId) return
+  rememberLastSession({
+    username: user.username,
+    userName: user.name,
+    companyId: user.companyId,
+    colorTheme,
+  })
+})
 
-const navigationItems = computed(() => [
-  ...(hasPermission('dashboard') ? [{ name: t('navigation.dashboard'), href: '/', icon: ChartNoAxesColumn }] : []),
-  {
-    name: t('navigation.registrations'),
-    icon: UserCheck,
-    children: [
-      ...(hasPermission('users') ? [{ name: t('navigation.users'), href: '/users', icon: Users }] : []),
-      ...(currentUser.value?.roleRoot && hasPermission('roles') ? [{ name: 'Roles', href: '/roles', icon: ShieldCheck }] : []),
-      ...(hasPermission('clients') ? [{ name: t('navigation.clients'), href: '/clients', icon: UsersRound }] : []),
-      ...(currentUser.value?.root && hasPermission('companies')
-        ? [{ name: t('navigation.companies'), href: '/companies', icon: Building2 }]
-        : []),
-    ],
-  },
-  ...(hasPermission('leads') ? [{ name: t('navigation.leads'), href: '/leads', icon: DollarSign }] : []),
-  ...(hasPermission('cases') ? [{ name: t('navigation.cases'), href: '/cases', icon: Scale }] : []),
-  ...(hasPermission('niss') ? [{ name: t('navigation.niss'), href: '/niss', icon: SocialSecurityIcon }] : []),
-].filter((item) => !item.children || item.children.length > 0))
+const hasPermission = (key: ResourceKey) =>
+  Boolean(currentUser.value?.root || currentUser.value?.permissions?.includes(key))
+
+const navigationItems = computed(() =>
+  [
+    ...(hasPermission('dashboard')
+      ? [{ name: t('navigation.dashboard'), href: '/', icon: ChartNoAxesColumn }]
+      : []),
+    {
+      name: t('navigation.registrations'),
+      icon: UserCheck,
+      children: [
+        ...(hasPermission('users')
+          ? [{ name: t('navigation.users'), href: '/users', icon: Users }]
+          : []),
+        ...(currentUser.value?.roleRoot && hasPermission('roles')
+          ? [{ name: 'Roles', href: '/roles', icon: ShieldCheck }]
+          : []),
+        ...(hasPermission('clients')
+          ? [{ name: t('navigation.clients'), href: '/clients', icon: UsersRound }]
+          : []),
+        ...(hasPermission('services')
+          ? [{ name: 'Serviços', href: '/services', icon: BriefcaseBusiness }]
+          : []),
+        ...(currentUser.value?.root && hasPermission('companies')
+          ? [{ name: t('navigation.companies'), href: '/companies', icon: Building2 }]
+          : []),
+      ],
+    },
+    ...(hasPermission('leads')
+      ? [{ name: t('navigation.leads'), href: '/leads', icon: DollarSign }]
+      : []),
+    ...(hasPermission('cases')
+      ? [{ name: t('navigation.cases'), href: '/cases', icon: Scale }]
+      : []),
+    ...(hasPermission('aima')
+      ? [{ name: t('navigation.aima'), href: '/aima', icon: AimaFaviconIcon }]
+      : []),
+    ...(hasPermission('niss')
+      ? [{ name: t('navigation.niss'), href: '/niss', icon: SocialSecurityIcon }]
+      : []),
+  ].filter((item) => !item.children || item.children.length > 0),
+)
 
 // Toggle submenu
 const toggleSubmenu = (menuName: string) => {

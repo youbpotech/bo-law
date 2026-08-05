@@ -105,11 +105,12 @@ export type CreateLeadInput = Pick<Lead, 'phone' | 'sourceChannel'> & LeadQualif
 
 export interface ConvertLeadInput {
   title: string
-  serviceType: string
+  serviceId: string
   contractedFee: number | string
   clientId?: string
   clientName?: string
   description?: string | null
   contractSignedAt?: string
   dueAt?: string
+  stakeholderUserIds: string[]
 }

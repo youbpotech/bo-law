@@ -56,6 +56,57 @@ function nullableCountry(value: unknown, field: string): string | null {
   return country?.toUpperCase() ?? null
 }
 
+function nullablePattern(
+  value: unknown,
+  pattern: RegExp,
+  field: string,
+  expectedFormat: string,
+  uppercase = false,
+): string | null {
+  const normalized = nullableText(value, 50, field)
+  if (!normalized) return null
+  const result = uppercase ? normalized.toUpperCase() : normalized
+  if (!pattern.test(result)) throw new Error(`${field} deve conter ${expectedFormat}`)
+  return result
+}
+
+export function isValidCitizenCardNumber(value: string): boolean {
+  if (!/^\d{9}[A-Z]{2}\d$/.test(value)) return false
+
+  let sum = 0
+  let doubleValue = false
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    const character = value[index]
+    let numericValue = /\d/.test(character)
+      ? Number(character)
+      : character.charCodeAt(0) - 'A'.charCodeAt(0) + 10
+
+    if (doubleValue) {
+      numericValue *= 2
+      if (numericValue >= 10) numericValue -= 9
+    }
+
+    sum += numericValue
+    doubleValue = !doubleValue
+  }
+
+  return sum % 10 === 0
+}
+
+function nullableCitizenCardNumber(value: unknown): string | null {
+  const number = nullablePattern(
+    value,
+    /^\d{9}[A-Z]{2}\d$/,
+    'N.º do Cartão de Cidadão',
+    '8 dígitos, um dígito verificador, 2 letras e um dígito final',
+    true,
+  )
+  if (number && !isValidCitizenCardNumber(number)) {
+    throw new Error('N.º do Cartão de Cidadão possui dígito de controlo inválido')
+  }
+  return number
+}
+
 function nullableDate(value: unknown, field: string): string | null {
   const date = nullableText(value, 10, field)
   if (!date) return null
@@ -86,6 +137,21 @@ function nullableChoice<const T extends readonly string[]>(
 export function applyClientProfileInput(client: Client, input: Record<string, unknown>): void {
   client.surname = nullableText(input.surname, 200, 'Apelido')
   client.portugueseTaxId = nullableText(input.portugueseTaxId, 20, 'NIF português')
+  client.niss = nullablePattern(input.niss, /^\d{11}$/, 'NISS', 'exatamente 11 dígitos')
+  client.snsUserNumber = nullablePattern(
+    input.snsUserNumber,
+    /^\d{9}$/,
+    'Número de utente (SNS)',
+    'exatamente 9 dígitos',
+  )
+  client.arNumber = nullablePattern(
+    input.arNumber,
+    /^[A-Z0-9]{9}$/,
+    'Número AR',
+    'exatamente 9 caracteres alfanuméricos',
+    true,
+  )
+  client.citizenCardNumber = nullableCitizenCardNumber(input.citizenCardNumber)
   client.foreignTaxId = nullableText(input.foreignTaxId, 20, 'Identificação fiscal estrangeira')
   client.foreignTaxIdType = nullableChoice(
     input.foreignTaxIdType,
@@ -105,14 +171,21 @@ export function applyClientProfileInput(client: Client, input: Record<string, un
   client.birthProvinceCode = nullableText(input.birthProvinceCode, 50, 'Código de província')
   client.birthPlace = nullableText(input.birthPlace, 200, 'Local de nascimento')
   client.birthDistrictId = nullableInteger(input.birthDistrictId, 'Distrito de naturalidade')
-  client.birthMunicipalityId = nullableInteger(input.birthMunicipalityId, 'Concelho de naturalidade')
+  client.birthMunicipalityId = nullableInteger(
+    input.birthMunicipalityId,
+    'Concelho de naturalidade',
+  )
   client.birthParishId = nullableInteger(input.birthParishId, 'Freguesia de naturalidade')
   client.civilDocumentType = nullableChoice(
     input.civilDocumentType,
     CIVIL_DOCUMENT_TYPES,
     'Tipo de documento civil',
   )
-  client.civilDocumentNumber = nullableText(input.civilDocumentNumber, 100, 'Número do documento civil')
+  client.civilDocumentNumber = nullableText(
+    input.civilDocumentNumber,
+    100,
+    'Número do documento civil',
+  )
   client.civilDocumentExpiryDate = nullableDate(
     input.civilDocumentExpiryDate,
     'Validade do documento civil',
@@ -126,9 +199,16 @@ export function applyClientProfileInput(client: Client, input: Record<string, un
   client.residenceAddress = nullableText(input.residenceAddress, 500, 'Morada de residência')
   client.residenceLocality = nullableText(input.residenceLocality, 200, 'Localidade de residência')
   client.residencePostalCode = nullableText(input.residencePostalCode, 30, 'Código postal')
-  client.residencePostalLocality = nullableText(input.residencePostalLocality, 200, 'Localidade postal')
+  client.residencePostalLocality = nullableText(
+    input.residencePostalLocality,
+    200,
+    'Localidade postal',
+  )
   client.residenceDistrictId = nullableInteger(input.residenceDistrictId, 'Distrito de residência')
-  client.residenceMunicipalityId = nullableInteger(input.residenceMunicipalityId, 'Concelho de residência')
+  client.residenceMunicipalityId = nullableInteger(
+    input.residenceMunicipalityId,
+    'Concelho de residência',
+  )
   client.residenceParishId = nullableInteger(input.residenceParishId, 'Freguesia de residência')
   client.foreignAddress = nullableText(input.foreignAddress, 500, 'Endereço estrangeiro')
   client.foreignAddress1 = nullableText(input.foreignAddress1, 500, 'Endereço estrangeiro 1')
