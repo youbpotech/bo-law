@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isStaleRemoteSnapshot, parseStakeholderUserIds } from './process-service'
+import {
+  hasRemoteStageChanged,
+  isStaleRemoteSnapshot,
+  parseStakeholderUserIds,
+  remoteStageEventKey,
+} from './process-service'
 
 describe('stakeholders de processos', () => {
   it('aceita uma lista vazia e remove duplicados', () => {
@@ -26,5 +31,18 @@ describe('stakeholders de processos', () => {
     expect(
       isStaleRemoteSnapshot('2026-08-04T12:00:00.000Z', '2026-08-04T12:00:01.000Z'),
     ).toBe(false)
+  })
+
+  it('compara etapas ignorando apenas diferenças de acento, caixa e espaços', () => {
+    expect(hasRemoteStageChanged('Em análise', 'Cartão Enviado')).toBe(true)
+    expect(hasRemoteStageChanged(' Cartão enviado ', 'cartao ENVIADO')).toBe(false)
+    expect(hasRemoteStageChanged(null, 'Cartão Enviado')).toBe(false)
+  })
+
+  it('gera uma chave idempotente por processo e etapa', () => {
+    const first = remoteStageEventKey('2', 'Cartão Enviado')
+    expect(remoteStageEventKey('2', 'cartao enviado')).toBe(first)
+    expect(remoteStageEventKey('2', 'Cartão entregue')).not.toBe(first)
+    expect(remoteStageEventKey('3', 'Cartão Enviado')).not.toBe(first)
   })
 })

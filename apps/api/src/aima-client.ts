@@ -17,11 +17,29 @@ export type AimaProcess = {
   requestInformationDate: string | null
   executionStatus: string | null
   lastPortalConsultationAt: string | null
+  cardTrackingCode: string | null
   createdAt: string
   updatedAt: string
 }
 
 type BotAimaRow = Record<string, unknown>
+
+export function shouldFetchAimaCardTracking(value: string | null): boolean {
+  const normalized = normalizeAimaState(value)
+  return normalized === 'cartao enviado' || normalized === 'cartao entregue'
+}
+
+export function isAimaCardSentState(value: string | null): boolean {
+  return normalizeAimaState(value) === 'cartao enviado'
+}
+
+function normalizeAimaState(value: string | null): string {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+}
 
 function configuration() {
   const baseUrl = (process.env.BOTAIMA_API_URL || '').replace(/\/$/, '')
@@ -98,6 +116,13 @@ export async function getAimaProcess(id: string): Promise<AimaProcess> {
 
 export async function getAimaDossier(id: string): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(`/api/v1/processos/${encodeURIComponent(id)}/dossie`)
+}
+
+export async function getAimaCardTracking(id: string): Promise<string | null> {
+  const result = await request<{ rastreio_ctt?: unknown }>(
+    `/api/v1/processos/${encodeURIComponent(id)}/rastreio-cartao`,
+  )
+  return nullableText(result.rastreio_ctt)
 }
 
 export async function getAimaDocuments(id: string): Promise<AimaDocument[]> {
@@ -201,6 +226,7 @@ export function mapAimaProcess(row: BotAimaRow): AimaProcess {
     requestInformationDate: nullableText(row.data_pedido_informacao),
     executionStatus: nullableText(row.status_execucao),
     lastPortalConsultationAt: nullableText(row.ultima_consulta_em),
+    cardTrackingCode: null,
     createdAt: text(row.criado_em),
     updatedAt: text(row.atualizado_em),
   }

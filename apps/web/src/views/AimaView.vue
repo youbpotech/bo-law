@@ -78,7 +78,7 @@ const filteredProcesses = computed(() => {
   const term = search.value.trim().toLowerCase()
   if (!term) return processes.value
   return processes.value.filter((process) =>
-    [process.client.name, process.client.surname, process.processNumber, process.titleNumber, process.currentState, process.trackingUrl]
+    [process.client.name, process.client.surname, process.processNumber, process.titleNumber, process.currentState, process.trackingUrl, process.cardTrackingCode]
       .some((value) => String(value ?? '').toLowerCase().includes(term)),
   )
 })
@@ -155,6 +155,11 @@ function elapsedTime(value: string | null): string {
   }
   if (totalHours > 0) return `${totalHours} ${totalHours === 1 ? 'hora' : 'horas'} atrás`
   return 'Há menos de 1 hora'
+}
+
+function cttTrackingUrl(code: string): string {
+  const encodedCode = encodeURIComponent(code)
+  return `https://appserver.ctt.pt/CustomerArea/PublicArea_Detail?ObjectCodeInput=${encodedCode}&SearchInput=${encodedCode}`
 }
 
 function statusClass(status: number): string {
@@ -261,7 +266,7 @@ onUnmounted(() => {
       <Table>
         <TableHeader><TableRow>
           <TableHead>Cliente</TableHead><TableHead>Processo AIMA</TableHead><TableHead>Estado AIMA</TableHead>
-          <TableHead>Status</TableHead><TableHead>Última consulta</TableHead><TableHead>Atualizado</TableHead><TableHead class="text-right">Ações</TableHead>
+          <TableHead>Status</TableHead><TableHead><span class="inline-flex items-center gap-1.5">Rastreio <img src="https://www.ctt.pt/favicon.ico" alt="" class="h-4 w-4 dark:hidden" /><span aria-hidden="true" class="hidden bg-transparent text-sm font-black lowercase leading-none tracking-[-0.08em] text-white dark:inline">ctt</span><span class="sr-only">CTT</span></span></TableHead><TableHead>Atualizado há</TableHead><TableHead class="text-right">Ações</TableHead>
         </TableRow></TableHeader>
         <TableBody>
           <TableRow v-if="isLoading"><TableCell colspan="7" class="text-center text-muted-foreground">Carregando...</TableCell></TableRow>
@@ -275,8 +280,13 @@ onUnmounted(() => {
             </TableCell>
             <TableCell><div class="max-w-xs"><p class="font-medium">{{ process.currentState || 'A aguardar primeira consulta' }}</p><p v-if="process.currentGuidance" class="mt-1 text-xs text-muted-foreground">{{ process.currentGuidance }}</p></div></TableCell>
             <TableCell><span :class="['inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium', statusClass(process.operationalStatus)]"><component :is="statusIcon(process.operationalStatus)" :class="['h-4 w-4', process.operationalStatus === 1 ? 'animate-spin' : '']" />{{ operationalStatus(process) }}</span><p v-if="process.denialReason" class="mt-1 max-w-xs text-xs text-destructive">{{ process.denialReason }}</p></TableCell>
-          <TableCell>{{ process.lastPortalConsultationAt ? date(process.lastPortalConsultationAt, true) : 'Ainda não consultado' }}</TableCell>
-          <TableCell><span :title="date(process.updatedAt, true)" :aria-label="`Atualizado em ${date(process.updatedAt, true)}`">{{ elapsedTime(process.updatedAt) }}</span></TableCell>
+          <TableCell>
+            <a v-if="process.cardTrackingCode" :href="cttTrackingUrl(process.cardTrackingCode)" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 font-mono font-medium text-primary hover:underline" :title="`Rastrear ${process.cardTrackingCode} nos CTT`">
+              {{ process.cardTrackingCode }}<ExternalLink class="h-3 w-3 shrink-0" />
+            </a>
+            <span v-else class="text-muted-foreground">Aguardando Rastreio</span>
+          </TableCell>
+          <TableCell><span :title="`Última consulta: ${process.lastPortalConsultationAt ? date(process.lastPortalConsultationAt, true) : 'Ainda não consultado'}`" :aria-label="`Atualizado há ${elapsedTime(process.updatedAt)}. Última consulta: ${process.lastPortalConsultationAt ? date(process.lastPortalConsultationAt, true) : 'Ainda não consultado'}`">{{ elapsedTime(process.updatedAt) }}</span></TableCell>
             <TableCell><div class="flex justify-end gap-2"><Button size="sm" variant="outline" :disabled="isLoadingDossier" title="Dossiê" aria-label="Dossiê" @click="openDossier(process.id)"><FileSearch class="h-4 w-4" /><span class="sr-only">Dossiê</span></Button><Button size="sm" variant="outline" :disabled="isLoadingDocuments" title="Documentos" aria-label="Documentos" @click="openDocuments(process.id)"><FolderOpen class="h-4 w-4" /><span class="sr-only">Documentos</span></Button><Button size="sm" variant="outline" :disabled="isReprocessing || process.operationalStatus === 1" title="Solicitar nova consulta" aria-label="Solicitar nova consulta" @click="reprocess(process)"><RefreshCw :class="['h-4 w-4', isReprocessing ? 'animate-spin' : '']" /><span class="sr-only">Solicitar nova consulta</span></Button></div></TableCell>
           </TableRow>
         </TableBody>

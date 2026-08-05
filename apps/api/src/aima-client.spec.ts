@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { fileNameFromContentDisposition, mapAimaProcess } from './aima-client'
+import {
+  fileNameFromContentDisposition,
+  isAimaCardSentState,
+  mapAimaProcess,
+  shouldFetchAimaCardTracking,
+} from './aima-client'
 
 describe('cliente BotAIMA', () => {
   it('mapeia o contrato snake_case da API para o modelo do backoffice', () => {
@@ -28,11 +33,21 @@ describe('cliente BotAIMA', () => {
       currentState: 'Em análise',
       attempts: 2,
       executionStatus: 'SUCESSO',
+      cardTrackingCode: null,
     })
   })
 
   it('prioriza o nome físico entregue pelo Content-Disposition', () => {
     expect(fileNameFromContentDisposition("attachment; filename*=UTF-8''snapshot%20a.html")).toBe('snapshot a.html')
     expect(fileNameFromContentDisposition('attachment; filename="snapshot.html"')).toBe('snapshot.html')
+  })
+
+  it('consulta o rastreio quando o cartão foi enviado ou já foi entregue', () => {
+    expect(shouldFetchAimaCardTracking('Cartão Enviado')).toBe(true)
+    expect(shouldFetchAimaCardTracking('Cartao enviado')).toBe(true)
+    expect(shouldFetchAimaCardTracking('Cartão entregue')).toBe(true)
+    expect(shouldFetchAimaCardTracking('Em análise')).toBe(false)
+    expect(isAimaCardSentState('Cartão Enviado')).toBe(true)
+    expect(isAimaCardSentState('Cartão entregue')).toBe(false)
   })
 })

@@ -9,10 +9,13 @@ import {
   createAimaProcess,
   downloadAimaDocument,
   getAimaDocuments,
+  getAimaCardTracking,
   getAimaDossier,
   getAimaProcess,
+  isAimaCardSentState,
   listAimaProcesses,
   reprocessAimaProcess,
+  shouldFetchAimaCardTracking,
   type AimaProcess,
 } from '../aima-client'
 import {
@@ -29,6 +32,7 @@ import {
   type PreparedIntegratedLegalCase,
 } from '../cases/process-service'
 import { notifyLegalCaseEvent } from '../notifications/case-events'
+import { buildAimaStageNotification } from '../aima-notification'
 
 export const aimaRouter = Router()
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -63,6 +67,7 @@ function aimaSnapshot(
     operationalStatusName: process.operationalStatusName,
     remoteCreatedAt: process.createdAt,
     remoteUpdatedAt: process.updatedAt,
+    remoteStage: process.currentState,
     terminal: process.operationalStatusName === 'CONCLUIDA',
     actionRequired: process.operationalStatusName === 'BLOQUEADA',
     metadata: {
@@ -90,6 +95,17 @@ async function ensureAimaLegalCase(
   if (transition.eventType) {
     const actionRequired = transition.eventType === 'process.action_required'
     const completed = transition.eventType === 'process.completed'
+    const stageChanged = transition.eventType === 'process.status_changed' && transition.stageChanged
+    const cardTrackingCode = stageChanged && isAimaCardSentState(transition.currentStage)
+      ? await getAimaCardTracking(process.id)
+      : null
+    const stageNotification = stageChanged
+      ? buildAimaStageNotification(
+        transition.previousStage!,
+        transition.currentStage!,
+        cardTrackingCode,
+      )
+      : null
     await notifyLegalCaseEvent({
       legalCaseId: integration.legalCaseId,
       eventType: transition.eventType,
@@ -97,14 +113,19 @@ async function ensureAimaLegalCase(
         ? 'Processo AIMA requer atenção'
         : completed
           ? 'Processo AIMA concluído'
-          : 'Estado do processo AIMA atualizado',
+          : stageNotification
+            ? stageNotification.title
+            : 'Estado do processo AIMA atualizado',
       body: actionRequired
         ? 'O processo AIMA está bloqueado e requer análise.'
-        : `O processo AIMA passou para ${process.operationalStatusName}.`,
+        : stageNotification
+          ? stageNotification.body
+          : `O processo AIMA passou para ${process.operationalStatusName}.`,
       eventKey: transition.eventKey,
       metadata: {
         externalProcessId: process.id,
         operationalStatus: process.operationalStatusName,
+        ...(stageNotification?.metadata ?? {}),
       },
     })
   }
@@ -144,8 +165,12 @@ aimaRouter.get('/aima', requireAuth, async (req, res) => {
           if (!integration) return null
           const client = integration.legalCase.client
           await ensureAimaLegalCase(user.companyId, client, process, integration)
+          const cardTrackingCode = shouldFetchAimaCardTracking(process.currentState)
+            ? await getAimaCardTracking(process.id)
+            : null
           return {
             ...publicAimaProcess(process),
+            cardTrackingCode,
             clientId: client.id,
             client,
             legalCaseId: integration.legalCaseId,

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { EntityManager } from 'typeorm'
 import { AppDataSource } from '../data-source'
 import { LegalCase, type LegalCaseType } from '../entities/LegalCase'
@@ -121,6 +121,7 @@ export type RemoteIntegratedLegalCaseSnapshot = {
   operationalStatusName: string
   remoteCreatedAt?: string | null
   remoteUpdatedAt?: string | null
+  remoteStage?: string | null
   terminal: boolean
   actionRequired: boolean
   metadata?: Record<string, unknown>
@@ -130,6 +131,9 @@ export type IntegratedLegalCaseTransition = {
   integration: LegalCaseIntegration
   eventType: 'process.status_changed' | 'process.action_required' | 'process.completed' | null
   eventKey: string
+  stageChanged: boolean
+  previousStage: string | null
+  currentStage: string | null
 }
 
 function isIntegrated(integration: LegalCaseIntegration): boolean {
@@ -178,7 +182,35 @@ function snapshotMetadata(
     remoteOperationalStatus: input.operationalStatus,
     remoteOperationalStatusName: input.operationalStatusName,
     remoteUpdatedAt: input.remoteUpdatedAt ?? null,
+    remoteStage: normalizedStageValue(input.remoteStage),
   }
+}
+
+function normalizedStageValue(value?: string | null): string | null {
+  const result = value?.trim()
+  return result || null
+}
+
+function comparableStage(value?: string | null): string | null {
+  const normalized = normalizedStageValue(value)
+  return normalized
+    ? normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    : null
+}
+
+export function hasRemoteStageChanged(
+  previousStage?: string | null,
+  currentStage?: string | null,
+): boolean {
+  const previous = comparableStage(previousStage)
+  const current = comparableStage(currentStage)
+  return Boolean(previous && current && previous !== current)
+}
+
+export function remoteStageEventKey(externalProcessId: string, stage: string): string {
+  const normalized = comparableStage(stage) ?? stage
+  const stageHash = createHash('sha256').update(normalized).digest('hex').slice(0, 24)
+  return `remote:${externalProcessId}:stage:${stageHash}`
 }
 
 function assertIntegratedCaseOwnership(
@@ -198,7 +230,6 @@ export async function syncIntegratedLegalCaseSnapshot(
   integration: LegalCaseIntegration,
   input: RemoteIntegratedLegalCaseSnapshot,
 ): Promise<IntegratedLegalCaseTransition> {
-  const eventKey = `remote:${input.externalProcessId}:${input.operationalStatusName}:${input.remoteUpdatedAt ?? 'unknown'}`
   return AppDataSource.transaction(async (manager) => {
     const current = await manager.getRepository(LegalCaseIntegration).findOne({
       where: { id: integration.id },
@@ -214,7 +245,14 @@ export async function syncIntegratedLegalCaseSnapshot(
     assertIntegratedCaseOwnership(current, input)
 
     if (isStaleRemoteSnapshot(current.metadata.remoteUpdatedAt, input.remoteUpdatedAt)) {
-      return { integration: current, eventType: null, eventKey }
+      return {
+        integration: current,
+        eventType: null,
+        eventKey: `remote:${input.externalProcessId}:stale`,
+        stageChanged: false,
+        previousStage: null,
+        currentStage: normalizedStageValue(input.remoteStage),
+      }
     }
 
     const previousStatus =
@@ -222,12 +260,22 @@ export async function syncIntegratedLegalCaseSnapshot(
         ? current.metadata.remoteOperationalStatusName
         : null
     const remoteChanged = previousStatus !== input.operationalStatusName
+    const previousStage = normalizedStageValue(
+      typeof current.metadata.remoteStage === 'string'
+        ? current.metadata.remoteStage
+        : typeof current.metadata.currentState === 'string'
+          ? current.metadata.currentState
+          : null,
+    )
+    const currentStage = normalizedStageValue(input.remoteStage)
+    const stageChanged = hasRemoteStageChanged(previousStage, currentStage)
     const nextIntegrationStatus = snapshotStatus(input)
     const becameTerminal = current.status !== 'completed' && input.terminal
     const reopened = current.status === 'completed' && !input.terminal
 
     if (
       remoteChanged ||
+      current.metadata.remoteStage !== currentStage ||
       current.status !== nextIntegrationStatus ||
       current.metadata.remoteUpdatedAt !== (input.remoteUpdatedAt ?? null)
     ) {
@@ -266,10 +314,13 @@ export async function syncIntegratedLegalCaseSnapshot(
       eventType = 'process.action_required'
     } else if (remoteChanged && becameTerminal) {
       eventType = 'process.completed'
-    } else if (remoteChanged && previousStatus) {
+    } else if (stageChanged || (remoteChanged && previousStatus)) {
       eventType = 'process.status_changed'
     }
-    return { integration: current, eventType, eventKey }
+    const eventKey = stageChanged && eventType === 'process.status_changed' && currentStage
+      ? remoteStageEventKey(input.externalProcessId, currentStage)
+      : `remote:${input.externalProcessId}:${input.operationalStatusName}:${input.remoteUpdatedAt ?? 'unknown'}`
+    return { integration: current, eventType, eventKey, stageChanged, previousStage, currentStage }
   })
 }
 

@@ -168,6 +168,7 @@ export interface AimaProcess {
   requestInformationDate: string | null
   executionStatus: string | null
   lastPortalConsultationAt: string | null
+  cardTrackingCode: string | null
   createdAt: string
   updatedAt: string
   client: Client
